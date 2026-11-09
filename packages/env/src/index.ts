@@ -328,7 +328,7 @@ const vercelEnv = {
   server: {
     VERCEL_TOKEN: z.string().min(1).optional(),
     VERCEL_TEAM_ID: z.string().min(1).optional(),
-    VERCEL_PROJECT: z.string().min(1).optional(),
+    VERCEL_GIT_COMMIT_SHA: z.string().min(1).optional(),
     VERCEL_BUILDER_PROJECT_NAME: z.string().min(1).optional(),
     VERCEL_LANDING_PROJECT_NAME: z.string().min(1).optional(),
   },
@@ -372,10 +372,12 @@ const unsplashEnv = {
 const pexelsEnv = {
   client: {
     NEXT_PUBLIC_PEXELS_API_KEY: z.string().min(1).optional(),
+    NEXT_PUBLIC_PEXELS_ACCESS_KEY: z.string().min(1).optional(),
   },
   runtimeEnv: {
-    NEXT_PUBLIC_PEXELS_API_KEY: getRuntimeVariable(
-      "NEXT_PUBLIC_PEXELS_API_KEY",
+    NEXT_PUBLIC_PEXELS_API_KEY: getRuntimeVariable("NEXT_PUBLIC_PEXELS_API_KEY"),
+    NEXT_PUBLIC_PEXELS_ACCESS_KEY: getRuntimeVariable(
+      "NEXT_PUBLIC_PEXELS_ACCESS_KEY",
     ),
   },
 };
