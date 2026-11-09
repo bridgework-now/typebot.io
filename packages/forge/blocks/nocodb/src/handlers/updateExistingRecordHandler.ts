@@ -14,18 +14,19 @@ export const updateExistingRecordHandler = createActionHandler(
   {
     server: async ({
       credentials: { baseUrl, apiKey },
-      options: { tableId, filter, viewId, updates },
+      options: { baseId, tableId, filter, viewId, updates },
       logs,
     }) => {
       if (!apiKey) return logs.add("API key is required");
       if (!updates) return logs.add("At least one update is required");
       if (!tableId) return logs.add("Table ID is required");
+      if (!baseId) return logs.add("Base ID is required for NocoDB API v3");
       if (!filter?.comparisons || filter.comparisons.length === 0)
         return logs.add("At least one filter is required");
       try {
         const listData = await safeKy
           .get(
-            `${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`,
+            `${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/records`,
             {
               headers: {
                 "xc-token": apiKey,
@@ -33,31 +34,35 @@ export const updateExistingRecordHandler = createActionHandler(
               searchParams: parseSearchParams({
                 where: convertFilterToWhereClause(filter),
                 viewId,
-                limit: defaultLimitForSearch,
+                pageSize: defaultLimitForSearch,
               }),
             },
           )
           .json<ListTableRecordsResponse>();
 
+        const recordIdsToUpdate = (listData.records ?? []).map((record) => record.id);
+        if (recordIdsToUpdate.length === 0) return;
+
         await safeKy.patch(
-          `${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`,
+          `${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/records`,
           {
             headers: {
               "xc-token": apiKey,
             },
             json: parseRecordsUpdateBody(
-              listData.list.map((item) => item.Id),
+              recordIdsToUpdate,
               updates,
             ),
           },
         );
 
         await linkRelationUpdatesIfAny({
+          baseId,
           baseUrl,
           apiKey,
           tableId,
           updates,
-          recordIdsToUpdate: listData.list.map((item) => item.Id),
+          recordIdsToUpdate,
         });
       } catch (error) {
         logs.add(

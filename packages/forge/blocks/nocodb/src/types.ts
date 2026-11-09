@@ -1,24 +1,19 @@
 export type ListTableRecordsResponse = {
-  list: Array<{
-    Id: number;
-    [key: string]: any;
+  records?: Array<{
+    id: string | number;
+    fields?: Record<string, any>;
   }>;
-  pageInfo: {
-    totalRows: number;
-    page: number;
-    pageSize: number;
-    isFirstPage: boolean;
-    isLastPage: boolean;
-  };
+  next?: string | null;
+  prev?: string | null;
 };
 
 // Non exhaustive list of types
-type UiDataType = "SingleLineText" | "ID" | "Email" | "LinkToAnotherRecord";
+type UiDataType = "SingleLineText" | "ID" | "Email" | "LinkToAnotherRecord" | "Links";
 
 export type TableMetaResponse = {
-  columns: Array<{
+  fields: Array<{
     id: string;
     title: string;
-    uidt: UiDataType;
+    type: UiDataType;
   }>;
 };

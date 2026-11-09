@@ -11,29 +11,44 @@ import type { ListTableRecordsResponse } from "../types";
 export const searchRecordsHandler = createActionHandler(searchRecords, {
   server: async ({
     credentials: { baseUrl, apiKey },
-    options: { tableId, responseMapping, filter, returnType, viewId },
+    options: { baseId, tableId, responseMapping, filter, returnType, viewId },
     variables,
     logs,
   }) => {
     if (!apiKey) return logs.add("API key is required");
+    if (!baseId) return logs.add("Base ID is required for NocoDB API v3");
     try {
-      const data = await safeKy
-        .get(`${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`, {
+      const response = await safeKy
+        .get(`${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/records`, {
           headers: {
             "xc-token": apiKey,
           },
           searchParams: parseSearchParams({
             where: convertFilterToWhereClause(filter),
             viewId,
-            limit: defaultLimitForSearch,
+            pageSize: defaultLimitForSearch,
           }),
         })
         .json<ListTableRecordsResponse>();
+      const data = {
+        list: (response.records ?? []).map((record) => ({
+          Id: record.id,
+          ...record.fields,
+        })),
+      };
 
       let filterIndex: number | undefined;
 
       if (returnType && returnType !== "All") {
-        const total = data.pageInfo.totalRows;
+        const { count: total } = await safeKy
+          .get(`${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/count`, {
+            headers: { "xc-token": apiKey },
+            searchParams: parseSearchParams({
+              where: convertFilterToWhereClause(filter),
+              viewId,
+            }),
+          })
+          .json<{ count: number }>();
         if (returnType === "First") {
           filterIndex = 0;
         } else if (returnType === "Last") {

@@ -1,16 +1,14 @@
 export const parseRecordsUpdateBody = (
-  ids: number[],
+  ids: (string | number)[],
   updates: { fieldName?: string; value?: string }[],
 ): Record<string, any>[] =>
   ids.map((id) => {
-    const record: Record<string, any> = {
-      Id: id,
-    };
+    const record: Record<string, any> = {};
 
     updates.forEach(({ fieldName, value }) => {
       if (!fieldName) return;
       record[fieldName] = value ?? null;
     });
 
-    return record;
+    return { id, fields: record };
   });
