@@ -372,12 +372,10 @@ const unsplashEnv = {
 const pexelsEnv = {
   client: {
     NEXT_PUBLIC_PEXELS_API_KEY: z.string().min(1).optional(),
-    NEXT_PUBLIC_PEXELS_ACCESS_KEY: z.string().min(1).optional(),
   },
   runtimeEnv: {
-    NEXT_PUBLIC_PEXELS_API_KEY: getRuntimeVariable("NEXT_PUBLIC_PEXELS_API_KEY"),
-    NEXT_PUBLIC_PEXELS_ACCESS_KEY: getRuntimeVariable(
-      "NEXT_PUBLIC_PEXELS_ACCESS_KEY",
+    NEXT_PUBLIC_PEXELS_API_KEY: getRuntimeVariable(
+      "NEXT_PUBLIC_PEXELS_API_KEY",
     ),
   },
 };
