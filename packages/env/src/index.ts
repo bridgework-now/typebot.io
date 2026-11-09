@@ -328,7 +328,7 @@ const vercelEnv = {
   server: {
     VERCEL_TOKEN: z.string().min(1).optional(),
     VERCEL_TEAM_ID: z.string().min(1).optional(),
-    VERCEL_GIT_COMMIT_SHA: z.string().min(1).optional(),
+    VERCEL_PROJECT: z.string().min(1).optional(),
     VERCEL_BUILDER_PROJECT_NAME: z.string().min(1).optional(),
     VERCEL_LANDING_PROJECT_NAME: z.string().min(1).optional(),
   },
@@ -396,6 +396,12 @@ const whatsAppEnv = {
       .url()
       .optional()
       .default("https://graph.facebook.com"),
+    // Applies only to the media URL lookup in downloadMedia.
+    WHATSAPP_CLOUD_API_MEDIA_VERSION: z
+      .string()
+      .regex(/^v\d+\.\d+$/)
+      .optional()
+      .default("v26.0"),
     WHATSAPP_INTERACTIVE_GROUP_SIZE: z.coerce.number().optional().default(3),
   },
 };

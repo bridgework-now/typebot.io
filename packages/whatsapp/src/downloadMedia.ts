@@ -36,8 +36,9 @@ export const downloadMedia = async ({
       mimeType: mime_type,
     };
   }
+  const mediaApiVersion = env.WHATSAPP_CLOUD_API_MEDIA_VERSION ?? "v26.0";
   const { url, mime_type } = await ky
-    .get(`${env.WHATSAPP_CLOUD_API_URL}/v17.0/${mediaId}`, {
+    .get(`${env.WHATSAPP_CLOUD_API_URL}/${mediaApiVersion}/${mediaId}`, {
       headers: {
         Authorization: `Bearer ${credentials.systemUserAccessToken}`,
       },
