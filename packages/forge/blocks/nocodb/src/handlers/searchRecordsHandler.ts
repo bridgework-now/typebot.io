@@ -1,12 +1,11 @@
 import { createActionHandler } from "@typebot.io/forge";
-import { safeKy } from "@typebot.io/lib/ky";
 import { parseUnknownError } from "@typebot.io/lib/parseUnknownError";
 import { isDefined, isNotDefined } from "@typebot.io/lib/utils";
 import { searchRecords } from "../actions/searchRecords";
 import { defaultBaseUrl, defaultLimitForSearch } from "../constants";
 import { convertFilterToWhereClause } from "../helpers/convertFilterToWhereClause";
 import { parseSearchParams } from "../helpers/parseSearchParams";
-import type { ListTableRecordsResponse } from "../types";
+import { listAllRecords } from "../helpers/listAllRecords";
 
 export const searchRecordsHandler = createActionHandler(searchRecords, {
   server: async ({
@@ -18,37 +17,27 @@ export const searchRecordsHandler = createActionHandler(searchRecords, {
     if (!apiKey) return logs.add("API key is required");
     if (!baseId) return logs.add("Base ID is required for NocoDB API v3");
     try {
-      const response = await safeKy
-        .get(`${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/records`, {
-          headers: {
-            "xc-token": apiKey,
-          },
-          searchParams: parseSearchParams({
-            where: convertFilterToWhereClause(filter),
-            viewId,
-            pageSize: defaultLimitForSearch,
-          }),
-        })
-        .json<ListTableRecordsResponse>();
+      const records = await listAllRecords(
+        `${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/records`,
+        apiKey,
+        parseSearchParams({
+          where: convertFilterToWhereClause(filter),
+          viewId,
+          pageSize: defaultLimitForSearch,
+        }),
+      );
       const data = {
-        list: (response.records ?? []).map((record) => ({
+        list: records.map((record) => ({
           Id: record.id,
           ...record.fields,
+          ...record.id_fields,
         })),
       };
 
       let filterIndex: number | undefined;
 
       if (returnType && returnType !== "All") {
-        const { count: total } = await safeKy
-          .get(`${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/count`, {
-            headers: { "xc-token": apiKey },
-            searchParams: parseSearchParams({
-              where: convertFilterToWhereClause(filter),
-              viewId,
-            }),
-          })
-          .json<{ count: number }>();
+        const total = data.list.length;
         if (returnType === "First") {
           filterIndex = 0;
         } else if (returnType === "Last") {

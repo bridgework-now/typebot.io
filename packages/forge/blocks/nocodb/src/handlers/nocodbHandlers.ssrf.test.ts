@@ -105,6 +105,112 @@ describe("NocoDB v3 request contracts", () => {
   });
 });
 
+describe("NocoDB v3 pagination", () => {
+  for (const returnType of ["All", "First", "Last"] as const) {
+    it(`maps ${returnType} across capped pages, including named composite keys`, async () => {
+      const records = Array.from({ length: 101 }, (_, index) => ({
+        id: `tenant:${index + 1}`,
+        id_fields: { Tenant: "tenant", ExternalId: index + 1 },
+        fields: { Name: `Record ${index + 1}` },
+      }));
+      const requestedPages: number[] = [];
+      replaceFetch(async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(request.url);
+        expect(url.pathname).toBe("/api/v3/data/base-id/table-id/records");
+        expect(request.headers.get("xc-token")).toBe("test-api-key");
+        const page = Number(url.searchParams.get("page") ?? "1");
+        requestedPages.push(page);
+        url.searchParams.set("page", "2");
+        return Response.json({
+          records: page === 1 ? records.slice(0, 100) : records.slice(100),
+          next: page === 1 ? url.href : null,
+        });
+      });
+      const mappedValues: unknown[] = [];
+      const variables = createVariablesStore();
+      variables.set = (values) => {
+        mappedValues.push(...values);
+      };
+
+      expect(
+        await executeSearchRecords("http://93.184.216.34", returnType, variables),
+      ).toEqual([]);
+      expect(requestedPages).toEqual([1, 2]);
+      const selectedRecords =
+        returnType === "All"
+          ? records
+          : [records[returnType === "First" ? 0 : 100]!];
+      expect(mappedValues).toEqual(
+        ["Id", "Tenant", "ExternalId"].map((fieldName) => {
+          const values = selectedRecords.map((record) => {
+            if (fieldName === "Id") return record.id;
+            if (fieldName === "Tenant") return record.id_fields.Tenant;
+            return record.id_fields.ExternalId;
+          });
+          return {
+            id: fieldName,
+            value: values.length === 1 ? values[0] : values,
+          };
+        }),
+      );
+    });
+  }
+
+  it("reads every page before writing and updates all 101 matches in capped batches", async () => {
+    const records = Array.from({ length: 101 }, (_, index) => ({
+      id: index + 1,
+      fields: {},
+    }));
+    const requestedPages: number[] = [];
+    const bodies: unknown[] = [];
+    replaceFetch(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/records") && request.method === "GET") {
+        const page = Number(url.searchParams.get("page") ?? "1");
+        requestedPages.push(page);
+        url.searchParams.set("page", "2");
+        return Response.json({
+          records: page === 1 ? records.slice(0, 100) : records.slice(100),
+          next: page === 1 ? url.href : null,
+        });
+      }
+      if (request.method === "PATCH") {
+        expect(requestedPages).toEqual([1, 2]);
+        expect(request.headers.get("xc-token")).toBe("test-api-key");
+        bodies.push(await request.json());
+      }
+      return createNocoDbResponse(input, init);
+    });
+
+    expect(await executeUpdateExistingRecord("http://93.184.216.34")).toEqual([]);
+    expect(bodies).toEqual(
+      Array.from({ length: 11 }, (_, batchIndex) =>
+        records.slice(batchIndex * 10, batchIndex * 10 + 10).map(({ id }) => ({
+          id,
+          fields: { Name: "Bob" },
+        })),
+      ),
+    );
+  });
+
+  it("rejects pagination to a different origin before forwarding the token", async () => {
+    let requestCount = 0;
+    replaceFetch(async () => {
+      requestCount++;
+      return Response.json({
+        records: [],
+        next: "https://example.com/api/v3/data/base-id/table-id/records?page=2",
+      });
+    });
+
+    const errors = await executeSearchRecords("http://93.184.216.34");
+    expect(requestCount).toBe(1);
+    expect(errors.join(" ")).toContain("unexpected pagination URL");
+  });
+});
+
 describe("NocoDB relation requests SSRF protection", () => {
   it("blocks relation metadata requests to private targets", async () => {
     let requestCount = 0;
@@ -184,15 +290,24 @@ const executeCreateRecord = async (baseUrl: string) => {
   return errors;
 };
 
-const executeSearchRecords = async (baseUrl: string) => {
+const executeSearchRecords = async (
+  baseUrl: string,
+  returnType?: "All" | "First" | "Last",
+  variables = createVariablesStore(),
+) => {
   const errors: string[] = [];
   await searchRecordsHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
       baseId: "base-id",
       tableId: "table-id",
+      returnType,
+      responseMapping: ["Id", "Tenant", "ExternalId"].map((fieldName) => ({
+        fieldName,
+        variableId: fieldName,
+      })),
     }),
-    variables: createVariablesStore(),
+    variables,
     logs: createLogsStore(errors),
     sessionStore: Object.create(null),
   });

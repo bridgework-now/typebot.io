@@ -7,7 +7,7 @@ import { convertFilterToWhereClause } from "../helpers/convertFilterToWhereClaus
 import { linkRelationUpdatesIfAny } from "../helpers/linkRelationUpdatesIfAny";
 import { parseRecordsUpdateBody } from "../helpers/parseRecordsUpdateBody";
 import { parseSearchParams } from "../helpers/parseSearchParams";
-import type { ListTableRecordsResponse } from "../types";
+import { listAllRecords } from "../helpers/listAllRecords";
 
 export const updateExistingRecordHandler = createActionHandler(
   updateExistingRecord,
@@ -24,37 +24,41 @@ export const updateExistingRecordHandler = createActionHandler(
       if (!filter?.comparisons || filter.comparisons.length === 0)
         return logs.add("At least one filter is required");
       try {
-        const listData = await safeKy
-          .get(
+        const records = await listAllRecords(
+          `${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/records`,
+          apiKey,
+          parseSearchParams({
+            where: convertFilterToWhereClause(filter),
+            viewId,
+            pageSize: defaultLimitForSearch,
+          }),
+        );
+
+        const recordIdsToUpdate = records.map((record) => record.id);
+        if (recordIdsToUpdate.length === 0) return;
+
+        const updateBatchSize = 10;
+        for (
+          let recordIndex = 0;
+          recordIndex < recordIdsToUpdate.length;
+          recordIndex += updateBatchSize
+        ) {
+          await safeKy.patch(
             `${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/records`,
             {
               headers: {
                 "xc-token": apiKey,
               },
-              searchParams: parseSearchParams({
-                where: convertFilterToWhereClause(filter),
-                viewId,
-                pageSize: defaultLimitForSearch,
-              }),
+              json: parseRecordsUpdateBody(
+                recordIdsToUpdate.slice(
+                  recordIndex,
+                  recordIndex + updateBatchSize,
+                ),
+                updates,
+              ),
             },
-          )
-          .json<ListTableRecordsResponse>();
-
-        const recordIdsToUpdate = (listData.records ?? []).map((record) => record.id);
-        if (recordIdsToUpdate.length === 0) return;
-
-        await safeKy.patch(
-          `${baseUrl ?? defaultBaseUrl}/api/v3/data/${baseId}/${tableId}/records`,
-          {
-            headers: {
-              "xc-token": apiKey,
-            },
-            json: parseRecordsUpdateBody(
-              recordIdsToUpdate,
-              updates,
-            ),
-          },
-        );
+          );
+        }
 
         await linkRelationUpdatesIfAny({
           baseId,

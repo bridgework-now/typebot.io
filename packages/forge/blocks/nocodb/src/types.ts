@@ -1,6 +1,7 @@
 export type ListTableRecordsResponse = {
   records?: Array<{
     id: string | number;
+    id_fields?: Record<string, any>;
     fields?: Record<string, any>;
   }>;
   next?: string | null;
