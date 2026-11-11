@@ -1,15 +1,14 @@
 import { createActionHandler } from "@typebot.io/forge";
-import { safeKy } from "@typebot.io/lib/ky";
 import { parseUnknownError } from "@typebot.io/lib/parseUnknownError";
 import { createRecord } from "../actions/createRecord";
-import { defaultBaseUrl } from "../constants";
+import { createNocoDbTableClient } from "../helpers/createNocoDbTableClient";
 import { linkRelationUpdatesIfAny } from "../helpers/linkRelationUpdatesIfAny";
 import { parseRecordsCreateBody } from "../helpers/parseRecordCreateBody";
 
 export const createRecordHandler = createActionHandler(createRecord, {
   server: async ({
     credentials: { baseUrl, apiKey },
-    options: { tableId, fields },
+    options: { baseId, tableId, fields },
     logs,
   }) => {
     try {
@@ -17,18 +16,20 @@ export const createRecordHandler = createActionHandler(createRecord, {
       if (!apiKey) return logs.add("API key is required");
       if (!tableId) return logs.add("Table ID is required");
 
-      const response = await safeKy
-        .post(`${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`, {
-          headers: {
-            "xc-token": apiKey,
-          },
-          json: parseRecordsCreateBody(fields),
-        })
-        .json<{ Id: number }>();
+      const tableClient = await createNocoDbTableClient({
+        baseUrl,
+        baseId,
+        apiKey,
+        tableId,
+      });
+      const response = await tableClient.createRecord(
+        parseRecordsCreateBody(fields),
+      );
       await linkRelationUpdatesIfAny({
         baseUrl,
         apiKey,
         tableId,
+        tableClient,
         updates: fields,
         recordIdsToUpdate: [response.Id],
       });

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { LogsStore, VariableStore } from "@typebot.io/forge/types";
 import { getSafeDispatcher } from "@typebot.io/lib/ssrf/createSafeDispatcher";
+import { createNocoDbTableClient } from "../helpers/createNocoDbTableClient";
 import { linkRelationUpdatesIfAny } from "../helpers/linkRelationUpdatesIfAny";
 import { createRecordHandler } from "./createRecordHandler";
 import { searchRecordsHandler } from "./searchRecordsHandler";
@@ -109,6 +110,7 @@ describe("NocoDB relation requests SSRF protection", () => {
       );
       if (init?.method === "POST") return Response.json({});
       return Response.json({
+        base_id: "base-id",
         columns: [
           {
             id: "relation-column",
@@ -123,9 +125,129 @@ describe("NocoDB relation requests SSRF protection", () => {
 
     expect(requestedUrls).toEqual([
       "http://93.184.216.34/api/v2/meta/tables/table-id",
-      "http://93.184.216.34/api/v2/tables/table-id/links/relation-column/records/1",
+      "http://93.184.216.34/api/v3/data/base-id/table-id/links/relation-column/1",
     ]);
     expect(dispatchers).toEqual([getSafeDispatcher(), getSafeDispatcher()]);
+  });
+});
+
+describe("NocoDB v3 migration", () => {
+  it("uses the default host, configured base ID, token and create envelope", async () => {
+    const urls: string[] = [];
+    replaceFetch(async (input, init) => {
+      const url = getRequestUrl(input);
+      urls.push(url);
+      expect(new Headers(init?.headers).get("xc-token")).toBe("test-api-key");
+      if (init?.method === "GET")
+        return Response.json({ base_id: "base-id", fields: [] });
+      expect(await new Response(init?.body).json()).toEqual({
+        fields: { Name: "Alice" },
+      });
+      return Response.json({ records: [{ id: "record-id", fields: {} }] });
+    });
+
+    const client = await createNocoDbTableClient({
+      baseUrl: undefined,
+      baseId: "base-id",
+      tableId: "table-id",
+      apiKey: "test-api-key",
+    });
+    expect(await client.createRecord({ Name: "Alice" })).toEqual({
+      Id: "record-id",
+    });
+    expect(urls).toEqual([
+      "https://app.nocodb.com/api/v3/meta/bases/base-id/tables/table-id",
+      "https://app.nocodb.com/api/v3/data/base-id/table-id/records",
+    ]);
+  });
+
+  it("preserves bounded searches, filters, total rows and flat field mappings", async () => {
+    const offsets: string[] = [];
+    replaceFetch(async (input) => {
+      const url = new URL(getRequestUrl(input));
+      if (url.pathname.includes("/meta/"))
+        return Response.json({ base_id: "base-id", fields: [] });
+      expect(url.origin).toBe("http://93.184.216.34");
+      expect(url.searchParams.get("where")).toBe("(Name,neq,Bob)");
+      expect(url.searchParams.get("viewId")).toBe("view-id");
+      if (url.pathname.endsWith("/count"))
+        return Response.json({ count: 7 });
+      const offset = url.searchParams.get("offset")!;
+      offsets.push(offset);
+      return Response.json({
+        records: [{
+          id: Number(offset) + 1,
+          id_fields: { Id: Number(offset) + 1 },
+          fields: {
+            Name: "Alice",
+            Related: [{ id: "related-id", fields: { Name: "Bob" } }],
+          },
+        }],
+        next: "http://127.0.0.1/never-follow-this-url",
+      });
+    });
+
+    const client = await createNocoDbTableClient({
+      baseUrl: "http://93.184.216.34",
+      baseId: "base-id",
+      tableId: "table-id",
+      apiKey: "test-api-key",
+    });
+    const response = await client.listRecords({
+      where: "(Name,neq,Bob)",
+      viewId: "view-id",
+      limit: 2,
+    });
+    expect(offsets).toEqual(["0", "1"]);
+    expect(response.list).toHaveLength(2);
+    expect(response.list[0]).toEqual({
+      Id: 1,
+      Name: "Alice",
+      Related: [{ Id: "related-id", Name: "Bob" }],
+    });
+    expect(response.pageInfo.totalRows).toBe(7);
+    expect(response.pageInfo.isLastPage).toBe(false);
+  });
+
+  it("bootstraps existing configurations and sends v3 update and link bodies", async () => {
+    const urls: string[] = [];
+    const bodies: unknown[] = [];
+    replaceFetch(async (input, init) => {
+      urls.push(getRequestUrl(input));
+      if (init?.method === "GET")
+        return Response.json({ base_id: "base-id", columns: [] });
+      bodies.push(await new Response(init?.body).json());
+      return Response.json({ success: true });
+    });
+
+    const client = await createNocoDbTableClient({
+      baseUrl: "http://93.184.216.34",
+      tableId: "table-id",
+      apiKey: "test-api-key",
+    });
+    await client.updateRecords(
+      Array.from({ length: 11 }, (_, index) => ({
+        Id: `record-${index}`,
+        Name: null,
+      })),
+    );
+    await client.linkRecords("relation-column", "record-0", ["42", 43]);
+    expect(urls[0]).toBe(
+      "http://93.184.216.34/api/v2/meta/tables/table-id",
+    );
+    expect(urls.slice(1, 12)).toEqual(
+      Array(11).fill("http://93.184.216.34/api/v3/data/base-id/table-id/records"),
+    );
+    expect(bodies.slice(0, 11)).toEqual(
+      Array.from({ length: 11 }, (_, index) => ({
+        id: `record-${index}`,
+        fields: { Name: null },
+      })),
+    );
+    expect(urls[12]).toBe(
+      "http://93.184.216.34/api/v3/data/base-id/table-id/links/relation-column/record-0",
+    );
+    expect(bodies[11]).toEqual([{ id: "42" }, { id: 43 }]);
   });
 });
 
@@ -226,12 +348,11 @@ const createNocoDbResponse = (
 ) => {
   const url = new URL(getRequestUrl(input));
   if (url.pathname.includes("/api/v2/meta/tables/"))
-    return Response.json({ columns: [] });
-  if (init?.method === "POST") return Response.json({ Id: 1 });
+    return Response.json({ base_id: "base-id", columns: [] });
+  if (url.pathname.endsWith("/count")) return Response.json({ count: 1 });
+  if (init?.method === "POST")
+    return Response.json({ records: [{ id: 1, fields: {} }] });
   if (init?.method === "GET")
-    return Response.json({
-      list: [{ Id: 1 }],
-      pageInfo: { totalRows: 1 },
-    });
+    return Response.json({ records: [{ id: 1, fields: {} }], next: null });
   return new Response(null, { status: 200 });
 };

@@ -1,20 +1,18 @@
 import { createActionHandler } from "@typebot.io/forge";
-import { safeKy } from "@typebot.io/lib/ky";
 import { parseUnknownError } from "@typebot.io/lib/parseUnknownError";
 import { updateExistingRecord } from "../actions/updateExistingRecord";
-import { defaultBaseUrl, defaultLimitForSearch } from "../constants";
+import { defaultLimitForSearch } from "../constants";
 import { convertFilterToWhereClause } from "../helpers/convertFilterToWhereClause";
 import { linkRelationUpdatesIfAny } from "../helpers/linkRelationUpdatesIfAny";
 import { parseRecordsUpdateBody } from "../helpers/parseRecordsUpdateBody";
-import { parseSearchParams } from "../helpers/parseSearchParams";
-import type { ListTableRecordsResponse } from "../types";
+import { createNocoDbTableClient } from "../helpers/createNocoDbTableClient";
 
 export const updateExistingRecordHandler = createActionHandler(
   updateExistingRecord,
   {
     server: async ({
       credentials: { baseUrl, apiKey },
-      options: { tableId, filter, viewId, updates },
+      options: { baseId, tableId, filter, viewId, updates },
       logs,
     }) => {
       if (!apiKey) return logs.add("API key is required");
@@ -23,39 +21,30 @@ export const updateExistingRecordHandler = createActionHandler(
       if (!filter?.comparisons || filter.comparisons.length === 0)
         return logs.add("At least one filter is required");
       try {
-        const listData = await safeKy
-          .get(
-            `${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`,
-            {
-              headers: {
-                "xc-token": apiKey,
-              },
-              searchParams: parseSearchParams({
-                where: convertFilterToWhereClause(filter),
-                viewId,
-                limit: defaultLimitForSearch,
-              }),
-            },
-          )
-          .json<ListTableRecordsResponse>();
+        const tableClient = await createNocoDbTableClient({
+          baseUrl,
+          baseId,
+          apiKey,
+          tableId,
+        });
+        const listData = await tableClient.listRecords({
+          where: convertFilterToWhereClause(filter),
+          viewId,
+          limit: defaultLimitForSearch,
+        });
 
-        await safeKy.patch(
-          `${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`,
-          {
-            headers: {
-              "xc-token": apiKey,
-            },
-            json: parseRecordsUpdateBody(
-              listData.list.map((item) => item.Id),
-              updates,
-            ),
-          },
+        await tableClient.updateRecords(
+          parseRecordsUpdateBody(
+            listData.list.map((item) => item.Id),
+            updates,
+          ),
         );
 
         await linkRelationUpdatesIfAny({
           baseUrl,
           apiKey,
           tableId,
+          tableClient,
           updates,
           recordIdsToUpdate: listData.list.map((item) => item.Id),
         });
