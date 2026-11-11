@@ -34,7 +34,7 @@ export const sendWhatsAppMessage = async ({
       });
     } else {
       await ky.post(
-        `${env.WHATSAPP_CLOUD_API_URL}/v21.0/${credentials.phoneNumberId}/messages`,
+        `${env.WHATSAPP_CLOUD_API_URL}/v26.0/${credentials.phoneNumberId}/messages`,
         {
           headers: {
             Authorization: `Bearer ${credentials.systemUserAccessToken}`,

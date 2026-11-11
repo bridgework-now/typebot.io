@@ -76,7 +76,7 @@ export const getOrUploadMedia = async ({
     } else {
       const response = await ky
         .post(
-          `${env.WHATSAPP_CLOUD_API_URL}/v21.0/${cache.credentials.phoneNumberId}/media`,
+          `${env.WHATSAPP_CLOUD_API_URL}/v26.0/${cache.credentials.phoneNumberId}/media`,
           {
             headers: {
               Authorization: `Bearer ${cache.credentials.systemUserAccessToken}`,
