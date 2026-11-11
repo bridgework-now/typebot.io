@@ -61,16 +61,44 @@ export default [
         };
 
       try {
-        const response = await got
-          .get(`${baseUrl}/v1/voices`, {
-            headers: {
-              "xi-api-key": credentials.apiKey,
-            },
-          })
-          .json<VoicesResponse>();
+        const voices: VoicesResponse["voices"] = [];
+        const seenPageTokens = new Set<string>();
+        let nextPageToken: string | undefined;
+
+        while (true) {
+          const searchParams = new URLSearchParams({
+            page_size: "100",
+            include_total_count: "false",
+          });
+          if (nextPageToken !== undefined)
+            searchParams.set("next_page_token", nextPageToken);
+
+          const response = await got
+            .get(`${baseUrl}/v2/voices`, {
+              headers: {
+                "xi-api-key": credentials.apiKey,
+              },
+              searchParams,
+            })
+            .json<VoicesResponse>();
+
+          voices.push(...response.voices);
+          if (!response.has_more) break;
+
+          if (
+            !response.next_page_token ||
+            seenPageTokens.has(response.next_page_token)
+          )
+            throw new Error(
+              "ElevenLabs voice pagination returned an invalid continuation token",
+            );
+
+          nextPageToken = response.next_page_token;
+          seenPageTokens.add(nextPageToken);
+        }
 
         return {
-          data: response.voices.map((voice) => ({
+          data: voices.map((voice) => ({
             value: voice.voice_id,
             label: voice.name,
           })),

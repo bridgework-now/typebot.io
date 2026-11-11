@@ -3,6 +3,8 @@ export type VoicesResponse = {
     name: string;
     voice_id: string;
   }[];
+  has_more: boolean;
+  next_page_token?: string | null;
 };
 
 export type ModelsResponse = {
