@@ -50,6 +50,11 @@ export const createNocoDbTableClient = async ({
 
   const dataUrl = `${origin}/api/v3/data/${encodeURIComponent(resolvedBaseId)}/${encodedTableId}`;
   const recordsUrl = `${dataUrl}/records`;
+  const relationFieldNames = new Set(
+    tableMeta.columns
+      .filter((column) => column.uidt === "LinkToAnotherRecord")
+      .map((column) => column.title),
+  );
 
   return {
     tableMeta,
@@ -85,7 +90,9 @@ export const createNocoDbTableClient = async ({
           })
           .json<{ records: NocoDbRecord[]; next?: string | null }>();
         const records = response.records.slice(0, limit - list.length);
-        list.push(...records.map(normalizeRecord));
+        list.push(
+          ...records.map((record) => normalizeRecord(record, relationFieldNames)),
+        );
         // Use the pagination flag, never a provider-supplied URL, to retain
         // the configured origin and safeKy validation on every request.
         hasNextPage = Boolean(response.next) && records.length > 0;
@@ -111,7 +118,14 @@ export const createNocoDbTableClient = async ({
     },
     updateRecords: async (records: Record<string, any>[]) => {
       // Single-record requests also work when a deployment lowers its bulk cap.
-      for (const { Id, ...fields } of records) {
+      for (const { Id, ...recordFields } of records) {
+        // Relations are linked separately to preserve existing links.
+        const fields = Object.fromEntries(
+          Object.entries(recordFields).filter(
+            ([fieldName]) => !relationFieldNames.has(fieldName),
+          ),
+        );
+        if (Object.keys(fields).length === 0) continue;
         await safeKy.patch(recordsUrl, {
           headers,
           json: { id: Id, fields },
@@ -142,13 +156,16 @@ type NocoDbRecord = {
   fields?: Record<string, any>;
 };
 
-const normalizeRecord = (record: NocoDbRecord) => ({
+const normalizeRecord = (
+  record: NocoDbRecord,
+  relationFieldNames: ReadonlySet<string> = new Set<string>(),
+) => ({
   Id: record.id,
   ...record.id_fields,
   ...Object.fromEntries(
     Object.entries(record.fields ?? {}).map(([key, value]) => [
       key,
-      normalizeFieldValue(value),
+      relationFieldNames.has(key) ? normalizeFieldValue(value) : value,
     ]),
   ),
 });

@@ -166,7 +166,14 @@ describe("NocoDB v3 migration", () => {
     replaceFetch(async (input) => {
       const url = new URL(getRequestUrl(input));
       if (url.pathname.includes("/meta/"))
-        return Response.json({ base_id: "base-id", fields: [] });
+        return Response.json({
+          base_id: "base-id",
+          fields: [
+            { id: "relation-column", title: "Related", type: "LinkToAnotherRecord" },
+            { id: "json-column", title: "Payload", type: "JSON" },
+            { id: "json-array-column", title: "Payloads", type: "JSON" },
+          ],
+        });
       expect(url.origin).toBe("http://93.184.216.34");
       expect(url.searchParams.get("where")).toBe("(Name,neq,Bob)");
       expect(url.searchParams.get("viewId")).toBe("view-id");
@@ -180,7 +187,15 @@ describe("NocoDB v3 migration", () => {
           id_fields: { Id: Number(offset) + 1 },
           fields: {
             Name: "Alice",
-            Related: [{ id: "related-id", fields: { Name: "Bob" } }],
+            Related: [{
+              id: "related-id",
+              fields: {
+                Name: "Bob",
+                Payload: { id: 9, fields: { status: "nested" }, extra: true },
+              },
+            }],
+            Payload: { id: 7, fields: { status: "ok" }, extra: "keep" },
+            Payloads: [{ id: 8, fields: { status: "ok" }, extra: "keep" }],
           },
         }],
         next: "http://127.0.0.1/never-follow-this-url",
@@ -203,10 +218,91 @@ describe("NocoDB v3 migration", () => {
     expect(response.list[0]).toEqual({
       Id: 1,
       Name: "Alice",
-      Related: [{ Id: "related-id", Name: "Bob" }],
+      Related: [{
+        Id: "related-id",
+        Name: "Bob",
+        Payload: { id: 9, fields: { status: "nested" }, extra: true },
+      }],
+      Payload: { id: 7, fields: { status: "ok" }, extra: "keep" },
+      Payloads: [{ id: 8, fields: { status: "ok" }, extra: "keep" }],
     });
     expect(response.pageInfo.totalRows).toBe(7);
     expect(response.pageInfo.isLastPage).toBe(false);
+  });
+
+  it("keeps handler relation updates additive for mixed and relation-only inputs", async () => {
+    for (const baseId of [undefined, "base-id"]) {
+      for (const relationOnly of [false, true]) {
+        const writes: unknown[] = [];
+        const errors: string[] = [];
+        const recordIds = [1, "record-2"];
+        replaceFetch(async (input, init) => {
+          const url = new URL(getRequestUrl(input));
+          if (url.pathname.includes("/meta/"))
+            return Response.json(baseId ? {
+              base_id: "base-id",
+              fields: [{
+                id: "relation-column",
+                title: "Related",
+                type: "LinkToAnotherRecord",
+              }],
+            } : {
+              base_id: "base-id",
+              columns: [{
+                id: "relation-column",
+                title: "Related",
+                uidt: "LinkToAnotherRecord",
+              }],
+            });
+          if (url.pathname.endsWith("/count"))
+            return Response.json({ count: recordIds.length });
+          if (init?.method === "GET")
+            return Response.json({
+              records: recordIds.map((id) => ({ id, fields: { Name: "Alice" } })),
+              next: null,
+            });
+          writes.push({
+            method: init?.method,
+            path: url.pathname,
+            body: await new Response(init?.body).json(),
+          });
+          return Response.json({ success: true });
+        });
+
+        const updates: { fieldName: string; value?: string }[] = [
+          { fieldName: "Related", value: '["42","43"]' },
+        ];
+        if (!relationOnly) updates.push({ fieldName: "Name" });
+        await updateExistingRecordHandler.server?.({
+          credentials: { baseUrl: "http://93.184.216.34", apiKey: "test-api-key" },
+          options: Object.assign(Object.create(null), {
+            baseId,
+            tableId: "table-id",
+            filter: {
+              comparisons: [{ input: "Name", operator: "Equal to", value: "Alice" }],
+            },
+            updates,
+          }),
+          variables: createVariablesStore(),
+          logs: createLogsStore(errors),
+          sessionStore: Object.create(null),
+        });
+
+        expect(errors).toEqual([]);
+        expect(writes).toEqual([
+          ...(relationOnly ? [] : recordIds.map((id) => ({
+            method: "PATCH",
+            path: "/api/v3/data/base-id/table-id/records",
+            body: { id, fields: { Name: null } },
+          }))),
+          ...recordIds.map((id) => ({
+            method: "POST",
+            path: `/api/v3/data/base-id/table-id/links/relation-column/${id}`,
+            body: [{ id: "42" }, { id: "43" }],
+          })),
+        ]);
+      }
+    }
   });
 
   it("bootstraps existing configurations and sends v3 update and link bodies", async () => {
