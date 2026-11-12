@@ -135,7 +135,7 @@ describe("NocoDB v3 request contracts", () => {
     replaceFetch(async (input, init) => {
       const url = getRequestUrl(input);
       if (init?.method === "POST") {
-        writes.push({ url, body: JSON.parse(String(init.body)) });
+        writes.push({ url, body: await new Response(init.body).json() });
         return Response.json({ records: [{ id: "created-id", fields: {} }] });
       }
       return Response.json({ fields: [] });
@@ -153,7 +153,7 @@ describe("NocoDB v3 request contracts", () => {
       const url = new URL(getRequestUrl(input));
       if (init?.method === "PATCH") {
         expect(url.pathname).toBe("/api/v3/data/base-id/table-id/records");
-        writes.push(JSON.parse(String(init.body)));
+        writes.push(await new Response(init.body).json());
         return Response.json({ records: [] });
       }
       if (url.pathname.includes("/meta/")) return Response.json({ fields: [] });
@@ -177,7 +177,7 @@ describe("NocoDB v3 request contracts", () => {
     const writes: unknown[] = [];
     replaceFetch(async (_input, init) => {
       if (init?.method === "POST") {
-        writes.push(JSON.parse(String(init.body)));
+        writes.push(await new Response(init.body).json());
         return Response.json({ success: true });
       }
       return Response.json({ fields: [{
