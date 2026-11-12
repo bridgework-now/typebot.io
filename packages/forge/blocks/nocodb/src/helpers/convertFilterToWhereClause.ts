@@ -1,4 +1,4 @@
-// See `where`: https://docs.nocodb.com/0.109.7/developer-resources/rest-apis/#query-params
+// See `where`: https://nocodb.com/docs/apis/filtering
 // Example: (colName,eq,colValue)~or(colName2,gt,colValue2)
 
 import { isEmpty } from "@typebot.io/lib/utils";
@@ -21,7 +21,7 @@ export const convertFilterToWhereClause = (
     .map((comparison) => {
       switch (comparison.operator) {
         case "Not equal":
-          return `(${comparison.input},ne,${comparison.value})`;
+          return `(${comparison.input},neq,${comparison.value})`;
         case "Contains":
           return `(${comparison.input},like,%${comparison.value}%)`;
         case "Greater than":

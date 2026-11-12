@@ -7,6 +7,13 @@ export const searchRecords = createAction({
   auth,
   name: "Search Records",
   options: option.object({
+    baseId: option.string.meta({
+      layout: {
+        label: "Base ID",
+        isRequired: true,
+        helperText: "Identifier of the project containing the table, required by NocoDB v3.",
+      },
+    }),
     tableId: option.string.meta({
       layout: {
         label: "Table ID",

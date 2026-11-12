@@ -109,11 +109,11 @@ describe("NocoDB relation requests SSRF protection", () => {
       );
       if (init?.method === "POST") return Response.json({});
       return Response.json({
-        columns: [
+        fields: [
           {
             id: "relation-column",
             title: "Related record",
-            uidt: "LinkToAnotherRecord",
+            type: "LinkToAnotherRecord",
           },
         ],
       });
@@ -122,10 +122,72 @@ describe("NocoDB relation requests SSRF protection", () => {
     await executeRelationUpdates("http://93.184.216.34");
 
     expect(requestedUrls).toEqual([
-      "http://93.184.216.34/api/v2/meta/tables/table-id",
-      "http://93.184.216.34/api/v2/tables/table-id/links/relation-column/records/1",
+      "http://93.184.216.34/api/v3/meta/bases/base-id/tables/table-id",
+      "http://93.184.216.34/api/v3/data/base-id/table-id/links/relation-column/1",
     ]);
     expect(dispatchers).toEqual([getSafeDispatcher(), getSafeDispatcher()]);
+  });
+});
+
+describe("NocoDB v3 request contracts", () => {
+  it("wraps create fields and uses the configured host", async () => {
+    const writes: { url: string; body: unknown }[] = [];
+    replaceFetch(async (input, init) => {
+      const url = getRequestUrl(input);
+      if (init?.method === "POST") {
+        writes.push({ url, body: JSON.parse(String(init.body)) });
+        return Response.json({ records: [{ id: "created-id", fields: {} }] });
+      }
+      return Response.json({ fields: [] });
+    });
+    expect(await executeCreateRecord("http://93.184.216.34")).toEqual([]);
+    expect(writes).toEqual([{
+      url: "http://93.184.216.34/api/v3/data/base-id/table-id/records",
+      body: { fields: { Name: "Alice" } },
+    }]);
+  });
+
+  it("updates more than ten matches using single-record v3 requests", async () => {
+    const writes: unknown[] = [];
+    replaceFetch(async (input, init) => {
+      const url = new URL(getRequestUrl(input));
+      if (init?.method === "PATCH") {
+        expect(url.pathname).toBe("/api/v3/data/base-id/table-id/records");
+        writes.push(JSON.parse(String(init.body)));
+        return Response.json({ records: [] });
+      }
+      if (url.pathname.includes("/meta/")) return Response.json({ fields: [] });
+      if (url.pathname.endsWith("/count")) return Response.json({ count: 12 });
+      return Response.json({
+        records: Array.from({ length: 12 }, (_, index) => ({
+          id: `record-${index}`,
+          fields: { Name: "Alice" },
+        })),
+        next: null,
+      });
+    });
+    expect(await executeUpdateExistingRecord("http://93.184.216.34")).toEqual([]);
+    expect(writes).toEqual(Array.from({ length: 12 }, (_, index) => ({
+      id: `record-${index}`,
+      fields: { Name: "Bob" },
+    })));
+  });
+
+  it("sends lowercase link identifiers without replacing existing links", async () => {
+    const writes: unknown[] = [];
+    replaceFetch(async (_input, init) => {
+      if (init?.method === "POST") {
+        writes.push(JSON.parse(String(init.body)));
+        return Response.json({ success: true });
+      }
+      return Response.json({ fields: [{
+        id: "relation-column",
+        title: "Related record",
+        type: "LinkToAnotherRecord",
+      }] });
+    });
+    await executeRelationUpdates("http://93.184.216.34");
+    expect(writes).toEqual([[{ id: "42" }]]);
   });
 });
 
@@ -134,6 +196,7 @@ const executeCreateRecord = async (baseUrl: string) => {
   await createRecordHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
+      baseId: "base-id",
       tableId: "table-id",
       fields: [{ key: "Name", value: "Alice" }],
     }),
@@ -148,7 +211,10 @@ const executeSearchRecords = async (baseUrl: string) => {
   const errors: string[] = [];
   await searchRecordsHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
-    options: Object.assign(Object.create(null), { tableId: "table-id" }),
+    options: Object.assign(Object.create(null), {
+      baseId: "base-id",
+      tableId: "table-id",
+    }),
     variables: createVariablesStore(),
     logs: createLogsStore(errors),
     sessionStore: Object.create(null),
@@ -161,6 +227,7 @@ const executeUpdateExistingRecord = async (baseUrl: string) => {
   await updateExistingRecordHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
+      baseId: "base-id",
       tableId: "table-id",
       filter: {
         comparisons: [{ input: "Name", operator: "Equal", value: "Alice" }],
@@ -184,6 +251,7 @@ const executeRelationUpdates = (baseUrl: string) =>
   linkRelationUpdatesIfAny({
     baseUrl,
     apiKey: "test-api-key",
+    baseId: "base-id",
     tableId: "table-id",
     updates: [{ fieldName: "Related record", value: "42" }],
     recordIdsToUpdate: [1],
@@ -225,13 +293,15 @@ const createNocoDbResponse = (
   init?: Parameters<typeof fetch>[1],
 ) => {
   const url = new URL(getRequestUrl(input));
-  if (url.pathname.includes("/api/v2/meta/tables/"))
-    return Response.json({ columns: [] });
-  if (init?.method === "POST") return Response.json({ Id: 1 });
+  if (url.pathname.includes("/api/v3/meta/bases/"))
+    return Response.json({ fields: [] });
+  if (url.pathname.endsWith("/count")) return Response.json({ count: 1 });
+  if (init?.method === "POST")
+    return Response.json({ records: [{ id: 1, fields: {} }] });
   if (init?.method === "GET")
     return Response.json({
-      list: [{ Id: 1 }],
-      pageInfo: { totalRows: 1 },
+      records: [{ id: 1, fields: {} }],
+      next: null,
     });
   return new Response(null, { status: 200 });
 };
