@@ -135,6 +135,82 @@ it("handles server page caps and restores field titles, primary keys and total r
   expect(result.pageInfo.totalRows).toBe(7);
 });
 
+it("returns records when optional table metadata is forbidden without weakening writes", async () => {
+  const paths: string[] = [];
+  const related = { id: "related", fields: { Name: "Bob" } };
+  replaceFetch(async (url) => {
+    paths.push(url.pathname);
+    if (url.pathname.includes("/meta/"))
+      return Response.json({ error: "FORBIDDEN" }, { status: 403 });
+    if (url.pathname.endsWith("/count")) return Response.json({ count: 7 });
+    return Response.json({
+      records: [{
+        id: "first",
+        id_fields: { ExternalKey: "external" },
+        fields: { Name: "Alice", Related: [related] },
+      }],
+      next: null,
+    });
+  });
+  const client = createClient();
+  const result = await client.list({ limit: "1" });
+  expect(result.list).toEqual([{
+    Id: "first",
+    ExternalKey: "external",
+    Name: "Alice",
+    Related: [related],
+  }]);
+  expect(result.pageInfo.totalRows).toBe(7);
+  expect(paths).toEqual([
+    "/api/v3/data/base/table/records",
+    "/api/v3/data/base/table/count",
+    "/api/v3/meta/bases/base/tables/table",
+  ]);
+  await expect(client.create({ Name: "Alice" })).rejects.toMatchObject({
+    response: { status: 403 },
+  });
+  expect(paths).toHaveLength(3);
+});
+
+it("preserves relation enrichment when table metadata is available", async () => {
+  replaceFetch(async (url) => {
+    if (url.pathname.includes("/meta/"))
+      return Response.json({
+        fields: [{ id: "relation", title: "Related", type: "LinkToAnotherRecord" }],
+      });
+    if (url.pathname.endsWith("/count")) return Response.json({ count: 1 });
+    return Response.json({
+      records: [{
+        id: "first",
+        fields: {
+          Related: [{ id: "related", fields: { Name: "Bob" } }],
+        },
+      }],
+      next: null,
+    });
+  });
+  const result = await createClient().list({ limit: "1" });
+  expect(result.list).toEqual([{
+    Id: "first",
+    Related: [{ Id: "related", Name: "Bob" }],
+  }]);
+});
+
+it.each(["records", "count"])(
+  "propagates forbidden %s requests",
+  async (forbiddenEndpoint) => {
+    replaceFetch(async (url) => {
+      if (url.pathname.endsWith(`/${forbiddenEndpoint}`))
+        return Response.json({ error: "FORBIDDEN" }, { status: 403 });
+      if (url.pathname.endsWith("/count")) return Response.json({ count: 0 });
+      return Response.json({ records: [], next: null });
+    });
+    await expect(createClient().list({ limit: "1" })).rejects.toMatchObject({
+      response: { status: 403 },
+    });
+  },
+);
+
 const createClient = () => createNocoDbClient({
   baseUrl: "http://93.184.216.34",
   baseId: "base",

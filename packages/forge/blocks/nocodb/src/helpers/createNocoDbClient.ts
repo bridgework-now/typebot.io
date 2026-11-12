@@ -1,4 +1,5 @@
 import { safeKy } from "@typebot.io/lib/ky";
+import { HTTPError } from "ky";
 import { defaultBaseUrl } from "../constants";
 import type { ListTableRecordsResponse, TableMetaResponse } from "../types";
 import { resolveNocoDbBaseId } from "./resolveNocoDbBaseId";
@@ -98,10 +99,17 @@ export const createNocoDbClient = ({
       const { count } = await safeKy
         .get(`${await getDataUrl()}/count`, { headers, searchParams: filters })
         .json<{ count: number }>();
-      const table = await readTable();
-      const relationNames = table.fields
-        .filter((field) => field.type === "LinkToAnotherRecord")
-        .map((field) => field.title);
+      // Record-read tokens may not have permission to read table metadata.
+      // Enrich relations when available, retaining raw values when forbidden.
+      const table = await readTable().catch((error: unknown) => {
+        if (error instanceof HTTPError && error.response.status === 403)
+          return undefined;
+        throw error;
+      });
+      const relationNames =
+        table?.fields
+          .filter((field) => field.type === "LinkToAnotherRecord")
+          .map((field) => field.title) ?? [];
       const list = records.map((record) => {
         const row = flattenRecord(record);
         for (const name of relationNames) {
