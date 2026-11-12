@@ -5,28 +5,31 @@ import type { TableMetaResponse } from "../types";
 
 type Params = {
   baseUrl: string | undefined;
+  baseId?: string;
   apiKey: string;
   tableId: string;
   updates: { fieldName?: string; value?: string }[];
-  recordIdsToUpdate: number[];
+  recordIdsToUpdate: (string | number)[];
 };
 export const linkRelationUpdatesIfAny = async ({
   baseUrl,
+  baseId,
   apiKey,
   tableId,
   updates,
   recordIdsToUpdate,
 }: Params) => {
+  if (!baseId) throw new Error("Base ID is required for NocoDB v3");
   const tableMeta = await safeKy
-    .get(`${baseUrl ?? defaultBaseUrl}/api/v2/meta/tables/${tableId}`, {
+    .get(`${baseUrl ?? defaultBaseUrl}/api/v3/meta/bases/${encodeURIComponent(baseId)}/tables/${encodeURIComponent(tableId)}`, {
       headers: {
         "xc-token": apiKey,
       },
     })
     .json<TableMetaResponse>();
 
-  const relationUpdates = tableMeta.columns
-    .filter((col) => col.uidt === "LinkToAnotherRecord")
+  const relationUpdates = tableMeta.fields
+    .filter((col) => ["Links", "LinkToAnotherRecord"].includes(col.type))
     .map((col) => ({
       id: col.id,
       value: transformValToArray(
@@ -39,12 +42,12 @@ export const linkRelationUpdatesIfAny = async ({
     for (const record of recordIdsToUpdate) {
       await safeKy
         .post(
-          `${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/links/${relationUpdate.id}/records/${record}`,
+          `${baseUrl ?? defaultBaseUrl}/api/v3/data/${encodeURIComponent(baseId)}/${encodeURIComponent(tableId)}/links/${encodeURIComponent(relationUpdate.id)}/${encodeURIComponent(record)}`,
           {
             headers: {
               "xc-token": apiKey,
             },
-            json: relationUpdate.value!.map((id) => ({ Id: id })),
+            json: relationUpdate.value!.map((id) => ({ id })),
           },
         )
         .json();
