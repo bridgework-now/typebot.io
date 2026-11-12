@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from "bun:test";
 import { createNocoDbClient } from "./createNocoDbClient";
+import { linkRelationUpdatesIfAny } from "./linkRelationUpdatesIfAny";
 
 const originalFetch = globalThis.fetch;
 
@@ -7,10 +8,65 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-it("requires the base ID before making requests", () => {
-  expect(() =>
-    createNocoDbClient({ tableId: "table", apiKey: "test-token" }),
-  ).toThrow("Base ID is required");
+it("resolves table-only configurations for reads, writes and links", async () => {
+  const requests: string[] = [];
+  replaceFetch(async (url, init) => {
+    expect(url.origin).toBe("http://93.184.216.34");
+    expect(new Headers(init?.headers).get("xc-token")).toBe("test-token");
+    requests.push(`${init?.method ?? "GET"} ${url.pathname}`);
+    if (url.pathname === "/api/v2/meta/tables/table")
+      return Response.json({ base_id: "base" });
+    if (url.pathname.includes("/api/v3/meta/"))
+      return Response.json({
+        fields: [{ id: "relation", title: "Related", type: "Links" }],
+      });
+    if (url.pathname.endsWith("/count")) return Response.json({ count: 1 });
+    if (url.pathname.endsWith("/links/relation/first")) return Response.json({});
+    return Response.json({
+      records: [{ id: "first", fields: { Name: "Alice" } }],
+      next: null,
+    });
+  });
+  const configuration = {
+    baseUrl: "http://93.184.216.34",
+    tableId: "table",
+    apiKey: "test-token",
+  };
+  const client = createNocoDbClient(configuration);
+  const result = await client.list({ limit: "1" });
+  expect(result.list).toEqual([{ Id: "first", Name: "Alice" }]);
+  expect(result.pageInfo.totalRows).toBe(1);
+  expect(await client.create({ Name: "Alice" })).toEqual({ Id: "first" });
+  await client.update([{ Id: "first", Name: "Bob" }]);
+  expect(requests.filter((request) => request.includes("/api/v2/"))).toEqual([
+    "GET /api/v2/meta/tables/table",
+  ]);
+  await linkRelationUpdatesIfAny({
+    ...configuration,
+    updates: [{ fieldName: "Related", value: "42" }],
+    recordIdsToUpdate: ["first"],
+  });
+  expect(requests.filter((request) => request.includes("/api/v3/data/"))).toEqual([
+    "GET /api/v3/data/base/table/records",
+    "GET /api/v3/data/base/table/count",
+    "POST /api/v3/data/base/table/records",
+    "PATCH /api/v3/data/base/table/records",
+    "POST /api/v3/data/base/table/links/relation/first",
+  ]);
+});
+
+it("rejects missing discovery metadata before writing", async () => {
+  const methods: string[] = [];
+  replaceFetch(async (_url, init) => {
+    methods.push(init?.method ?? "GET");
+    return Response.json({});
+  });
+  await expect(createNocoDbClient({
+    baseUrl: "http://93.184.216.34",
+    tableId: "table",
+    apiKey: "test-token",
+  }).create({ Name: "Alice" })).rejects.toThrow("configure Base ID explicitly");
+  expect(methods).toEqual(["GET"]);
 });
 
 it("preserves the custom host and token and wraps writes without replacing links", async () => {
@@ -18,13 +74,17 @@ it("preserves the custom host and token and wraps writes without replacing links
   replaceFetch(async (url, init) => {
     expect(url.origin).toBe("http://93.184.216.34");
     expect(new Headers(init?.headers).get("xc-token")).toBe("test-token");
+    expect(url.pathname.startsWith("/api/v2/")).toBe(false);
     if (url.pathname.includes("/meta/")) {
       return Response.json({
         fields: [{ id: "relation", title: "Related", type: "Links" }],
       });
     }
     expect(url.pathname).toBe("/api/v3/data/base/table/records");
-    writes.push({ method: init?.method, body: JSON.parse(String(init?.body)) });
+    writes.push({
+      method: init?.method,
+      body: await new Response(init?.body).json(),
+    });
     return Response.json({ records: [{ id: "created-id", fields: {} }] });
   });
   const client = createClient();

@@ -1,6 +1,7 @@
 import { safeKy } from "@typebot.io/lib/ky";
 import { defaultBaseUrl } from "../constants";
 import type { ListTableRecordsResponse, TableMetaResponse } from "../types";
+import { resolveNocoDbBaseId } from "./resolveNocoDbBaseId";
 
 type Params = {
   baseUrl?: string;
@@ -21,20 +22,26 @@ export const createNocoDbClient = ({
   tableId,
   apiKey,
 }: Params) => {
-  if (!baseId) throw new Error("Base ID is required for NocoDB v3");
   const host = baseUrl ?? defaultBaseUrl;
-  const basePath = `${encodeURIComponent(baseId)}/${encodeURIComponent(tableId)}`;
-  const dataUrl = `${host}/api/v3/data/${basePath}`;
   const headers = { "xc-token": apiKey };
+  let baseIdPromise: Promise<string> | undefined;
+  const getBaseId = () => {
+    baseIdPromise ??= resolveNocoDbBaseId({ baseUrl, baseId, tableId, apiKey });
+    return baseIdPromise;
+  };
+  const getDataUrl = async () =>
+    `${host}/api/v3/data/${encodeURIComponent(await getBaseId())}/${encodeURIComponent(tableId)}`;
   let tablePromise: Promise<TableMetaResponse> | undefined;
 
   const readTable = () => {
-    tablePromise ??= safeKy
-      .get(
-        `${host}/api/v3/meta/bases/${encodeURIComponent(baseId)}/tables/${encodeURIComponent(tableId)}`,
-        { headers },
-      )
-      .json<TableMetaResponse>();
+    tablePromise ??= getBaseId().then((resolvedBaseId) =>
+      safeKy
+        .get(
+          `${host}/api/v3/meta/bases/${encodeURIComponent(resolvedBaseId)}/tables/${encodeURIComponent(tableId)}`,
+          { headers },
+        )
+        .json<TableMetaResponse>(),
+    );
     return tablePromise;
   };
 
@@ -57,7 +64,7 @@ export const createNocoDbClient = ({
   return {
     create: async (fields: Record<string, any>) => {
       const response = await safeKy
-        .post(`${dataUrl}/records`, {
+        .post(`${await getDataUrl()}/records`, {
           headers,
           json: { fields: await ordinaryFields(fields) },
         })
@@ -75,7 +82,7 @@ export const createNocoDbClient = ({
       let hasNext = true;
       while (hasNext && records.length < maximum) {
         const response = await safeKy
-          .get(`${dataUrl}/records`, {
+          .get(`${await getDataUrl()}/records`, {
             headers,
             searchParams: {
               ...filters,
@@ -89,7 +96,7 @@ export const createNocoDbClient = ({
         hasNext = Boolean(response.next);
       }
       const { count } = await safeKy
-        .get(`${dataUrl}/count`, { headers, searchParams: filters })
+        .get(`${await getDataUrl()}/count`, { headers, searchParams: filters })
         .json<{ count: number }>();
       const table = await readTable();
       const relationNames = table.fields
@@ -125,7 +132,7 @@ export const createNocoDbClient = ({
       for (const { Id, ...fields } of records) {
         const writableFields = await ordinaryFields(fields);
         if (Object.keys(writableFields).length === 0) continue;
-        await safeKy.patch(`${dataUrl}/records`, {
+        await safeKy.patch(`${await getDataUrl()}/records`, {
           headers,
           json: { id: Id, fields: writableFields },
         });

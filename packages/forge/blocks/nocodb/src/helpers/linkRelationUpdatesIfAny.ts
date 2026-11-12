@@ -2,6 +2,7 @@ import { safeKy } from "@typebot.io/lib/ky";
 import { isDefined } from "@typebot.io/lib/utils";
 import { defaultBaseUrl } from "../constants";
 import type { TableMetaResponse } from "../types";
+import { resolveNocoDbBaseId } from "./resolveNocoDbBaseId";
 
 type Params = {
   baseUrl: string | undefined;
@@ -19,7 +20,7 @@ export const linkRelationUpdatesIfAny = async ({
   updates,
   recordIdsToUpdate,
 }: Params) => {
-  if (!baseId) throw new Error("Base ID is required for NocoDB v3");
+  baseId = await resolveNocoDbBaseId({ baseUrl, baseId, tableId, apiKey });
   const tableMeta = await safeKy
     .get(`${baseUrl ?? defaultBaseUrl}/api/v3/meta/bases/${encodeURIComponent(baseId)}/tables/${encodeURIComponent(tableId)}`, {
       headers: {
