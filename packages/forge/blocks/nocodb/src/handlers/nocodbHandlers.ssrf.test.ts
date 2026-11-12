@@ -129,6 +129,88 @@ describe("NocoDB relation requests SSRF protection", () => {
   });
 });
 
+describe("NocoDB saved action compatibility", () => {
+  for (const handler of handlers) {
+    for (const options of [{}, { baseId: "" }]) {
+      it(`resolves ${handler.name} Base ID for ${JSON.stringify(options)}`, async () => {
+        const requestedUrls: string[] = [];
+        const dispatchers: unknown[] = [];
+        replaceFetch(async (input, init) => {
+          const url = getRequestUrl(input);
+          requestedUrls.push(url);
+          dispatchers.push(
+            init && "dispatcher" in init ? init.dispatcher : undefined,
+          );
+          if (url.endsWith("/api/v2/meta/tables/table-id")) {
+            expect(init?.method).toBe("GET");
+            expect(new Headers(init?.headers).get("xc-token")).toBe("test-api-key");
+            return Response.json({ base_id: "resolved-base" });
+          }
+          return createNocoDbResponse(input, init);
+        });
+
+        expect(await handler.execute("http://93.184.216.34/prefix", options)).toEqual([]);
+        expect(requestedUrls[0]).toBe(
+          "http://93.184.216.34/prefix/api/v2/meta/tables/table-id",
+        );
+        expect(requestedUrls.slice(1).some((url) =>
+          url.includes("/api/v3/data/resolved-base/table-id/records"),
+        )).toBe(true);
+        expect(requestedUrls.slice(1).every((url) =>
+          url.startsWith("http://93.184.216.34/prefix/api/v3/"),
+        )).toBe(true);
+        expect(dispatchers.every((dispatcher) => dispatcher === getSafeDispatcher())).toBe(true);
+      });
+    }
+
+    it(`preserves an explicit Base ID for ${handler.name}`, async () => {
+      const requestedUrls: string[] = [];
+      replaceFetch(async (input, init) => {
+        requestedUrls.push(getRequestUrl(input));
+        return createNocoDbResponse(input, init);
+      });
+      expect(await handler.execute("http://93.184.216.34", {
+        baseId: "override-base",
+      })).toEqual([]);
+      expect(requestedUrls.some((url) => url.includes("/api/v2/"))).toBe(false);
+      expect(requestedUrls.some((url) =>
+        url.includes("/api/v3/data/override-base/table-id/records"),
+      )).toBe(true);
+    });
+
+    for (const response of [
+      () => Response.json({}),
+      () => Response.json({ base_id: 42 }),
+      () => Response.json({ base_id: " " }),
+      () => Response.json({ message: "Forbidden" }, { status: 403 }),
+    ]) {
+      it(`logs failed Base ID discovery before ${handler.name} continues`, async () => {
+        const requestedUrls: string[] = [];
+        replaceFetch(async (input) => {
+          requestedUrls.push(getRequestUrl(input));
+          return response();
+        });
+        const errors = await handler.execute("http://93.184.216.34", {});
+        expect(errors.length).toBeGreaterThan(0);
+        expect(requestedUrls).toEqual([
+          "http://93.184.216.34/api/v2/meta/tables/table-id",
+        ]);
+      });
+    }
+
+    it(`protects ${handler.name} discovery from private targets`, async () => {
+      let requestCount = 0;
+      replaceFetch(async () => {
+        requestCount++;
+        return Response.json({});
+      });
+      const errors = await handler.execute("http://127.0.0.1:3000", {});
+      expect(requestCount).toBe(0);
+      expect(errors.join(" ")).toContain("loopback addresses");
+    });
+  }
+});
+
 describe("NocoDB v3 request contracts", () => {
   it("wraps create fields and uses the configured host", async () => {
     const writes: { url: string; body: unknown }[] = [];
@@ -191,12 +273,15 @@ describe("NocoDB v3 request contracts", () => {
   });
 });
 
-const executeCreateRecord = async (baseUrl: string) => {
+const executeCreateRecord = async (
+  baseUrl: string,
+  options: { baseId?: string } = { baseId: "base-id" },
+) => {
   const errors: string[] = [];
   await createRecordHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
+      ...options,
       tableId: "table-id",
       fields: [{ key: "Name", value: "Alice" }],
     }),
@@ -207,12 +292,15 @@ const executeCreateRecord = async (baseUrl: string) => {
   return errors;
 };
 
-const executeSearchRecords = async (baseUrl: string) => {
+const executeSearchRecords = async (
+  baseUrl: string,
+  options: { baseId?: string } = { baseId: "base-id" },
+) => {
   const errors: string[] = [];
   await searchRecordsHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
+      ...options,
       tableId: "table-id",
     }),
     variables: createVariablesStore(),
@@ -222,12 +310,15 @@ const executeSearchRecords = async (baseUrl: string) => {
   return errors;
 };
 
-const executeUpdateExistingRecord = async (baseUrl: string) => {
+const executeUpdateExistingRecord = async (
+  baseUrl: string,
+  options: { baseId?: string } = { baseId: "base-id" },
+) => {
   const errors: string[] = [];
   await updateExistingRecordHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
+      ...options,
       tableId: "table-id",
       filter: {
         comparisons: [{ input: "Name", operator: "Equal", value: "Alice" }],

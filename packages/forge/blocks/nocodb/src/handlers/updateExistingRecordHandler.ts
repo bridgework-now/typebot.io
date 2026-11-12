@@ -9,22 +9,28 @@ import { getTableMeta } from "../helpers/getTableMeta";
 import { linkRelationUpdatesIfAny } from "../helpers/linkRelationUpdatesIfAny";
 import { parseRecordsUpdateBody } from "../helpers/parseRecordsUpdateBody";
 import { listTableRecords } from "../helpers/listTableRecords";
+import { resolveBaseId } from "../helpers/resolveBaseId";
 
 export const updateExistingRecordHandler = createActionHandler(
   updateExistingRecord,
   {
     server: async ({
       credentials: { baseUrl, apiKey },
-      options: { baseId, tableId, filter, viewId, updates },
+      options: { baseId: configuredBaseId, tableId, filter, viewId, updates },
       logs,
     }) => {
       if (!apiKey) return logs.add("API key is required");
       if (!updates) return logs.add("At least one update is required");
       if (!tableId) return logs.add("Table ID is required");
-      if (!baseId) return logs.add("Base ID is required for NocoDB v3");
       if (!filter?.comparisons || filter.comparisons.length === 0)
         return logs.add("At least one filter is required");
       try {
+        const baseId = await resolveBaseId({
+          baseUrl,
+          apiKey,
+          baseId: configuredBaseId,
+          tableId,
+        });
         const listData = await listTableRecords({
           baseUrl,
           apiKey,

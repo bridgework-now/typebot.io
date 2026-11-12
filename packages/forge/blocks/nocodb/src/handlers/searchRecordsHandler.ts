@@ -5,18 +5,24 @@ import { searchRecords } from "../actions/searchRecords";
 import { defaultLimitForSearch } from "../constants";
 import { convertFilterToWhereClause } from "../helpers/convertFilterToWhereClause";
 import { listTableRecords } from "../helpers/listTableRecords";
+import { resolveBaseId } from "../helpers/resolveBaseId";
 
 export const searchRecordsHandler = createActionHandler(searchRecords, {
   server: async ({
     credentials: { baseUrl, apiKey },
-    options: { baseId, tableId, responseMapping, filter, returnType, viewId },
+    options: { baseId: configuredBaseId, tableId, responseMapping, filter, returnType, viewId },
     variables,
     logs,
   }) => {
     if (!apiKey) return logs.add("API key is required");
     if (!tableId) return logs.add("Table ID is required");
-    if (!baseId) return logs.add("Base ID is required for NocoDB v3");
     try {
+      const baseId = await resolveBaseId({
+        baseUrl,
+        apiKey,
+        baseId: configuredBaseId,
+        tableId,
+      });
       const data = await listTableRecords({
         baseUrl,
         apiKey,

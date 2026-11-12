@@ -7,18 +7,24 @@ import { excludeRelationFields } from "../helpers/excludeRelationFields";
 import { getTableMeta } from "../helpers/getTableMeta";
 import { linkRelationUpdatesIfAny } from "../helpers/linkRelationUpdatesIfAny";
 import { parseRecordsCreateBody } from "../helpers/parseRecordCreateBody";
+import { resolveBaseId } from "../helpers/resolveBaseId";
 
 export const createRecordHandler = createActionHandler(createRecord, {
   server: async ({
     credentials: { baseUrl, apiKey },
-    options: { baseId, tableId, fields },
+    options: { baseId: configuredBaseId, tableId, fields },
     logs,
   }) => {
     try {
       if (!fields || fields.length === 0) return;
       if (!apiKey) return logs.add("API key is required");
       if (!tableId) return logs.add("Table ID is required");
-      if (!baseId) return logs.add("Base ID is required for NocoDB v3");
+      const baseId = await resolveBaseId({
+        baseUrl,
+        apiKey,
+        baseId: configuredBaseId,
+        tableId,
+      });
       const tableMeta = await getTableMeta({ baseUrl, apiKey, baseId, tableId });
 
       const response = await safeKy
