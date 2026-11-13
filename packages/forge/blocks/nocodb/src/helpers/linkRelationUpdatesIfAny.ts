@@ -1,32 +1,29 @@
-import { safeKy } from "@typebot.io/lib/ky";
 import { isDefined } from "@typebot.io/lib/utils";
-import { defaultBaseUrl } from "../constants";
-import type { TableMetaResponse } from "../types";
+import { createNocoDbClient } from "./createNocoDbClient";
 
 type Params = {
   baseUrl: string | undefined;
+  baseId: string;
   apiKey: string;
   tableId: string;
   updates: { fieldName?: string; value?: string }[];
-  recordIdsToUpdate: number[];
+  recordIdsToUpdate: Array<string | number>;
 };
 export const linkRelationUpdatesIfAny = async ({
   baseUrl,
+  baseId,
   apiKey,
   tableId,
   updates,
   recordIdsToUpdate,
 }: Params) => {
-  const tableMeta = await safeKy
-    .get(`${baseUrl ?? defaultBaseUrl}/api/v2/meta/tables/${tableId}`, {
-      headers: {
-        "xc-token": apiKey,
-      },
-    })
-    .json<TableMetaResponse>();
+  const client = createNocoDbClient({ baseUrl, baseId, apiKey, tableId });
+  const tableMeta = await client.getTableMeta();
 
   const relationUpdates = tableMeta.columns
-    .filter((col) => col.uidt === "LinkToAnotherRecord")
+    .filter(
+      (col) => col.uidt === "LinkToAnotherRecord" || col.uidt === "Links",
+    )
     .map((col) => ({
       id: col.id,
       value: transformValToArray(
@@ -37,17 +34,11 @@ export const linkRelationUpdatesIfAny = async ({
 
   for (const relationUpdate of relationUpdates) {
     for (const record of recordIdsToUpdate) {
-      await safeKy
-        .post(
-          `${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/links/${relationUpdate.id}/records/${record}`,
-          {
-            headers: {
-              "xc-token": apiKey,
-            },
-            json: relationUpdate.value!.map((id) => ({ Id: id })),
-          },
-        )
-        .json();
+      await client.linkRecords(
+        relationUpdate.id,
+        record,
+        relationUpdate.value!,
+      );
     }
   }
 };

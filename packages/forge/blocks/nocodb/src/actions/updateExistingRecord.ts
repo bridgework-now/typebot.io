@@ -6,6 +6,14 @@ export const updateExistingRecord = createAction({
   auth,
   name: "Update Existing Record",
   options: option.object({
+    baseId: option.string.meta({
+      layout: {
+        label: "Base ID",
+        isRequired: true,
+        helperText:
+          "Identifier of the base containing this table. Required by NocoDB API v3.",
+      },
+    }),
     tableId: option.string.meta({
       layout: {
         label: "Table ID",

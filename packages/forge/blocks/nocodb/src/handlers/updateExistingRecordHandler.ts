@@ -1,59 +1,52 @@
 import { createActionHandler } from "@typebot.io/forge";
-import { safeKy } from "@typebot.io/lib/ky";
 import { parseUnknownError } from "@typebot.io/lib/parseUnknownError";
 import { updateExistingRecord } from "../actions/updateExistingRecord";
-import { defaultBaseUrl, defaultLimitForSearch } from "../constants";
+import { defaultLimitForSearch } from "../constants";
 import { convertFilterToWhereClause } from "../helpers/convertFilterToWhereClause";
+import { createNocoDbClient } from "../helpers/createNocoDbClient";
 import { linkRelationUpdatesIfAny } from "../helpers/linkRelationUpdatesIfAny";
 import { parseRecordsUpdateBody } from "../helpers/parseRecordsUpdateBody";
 import { parseSearchParams } from "../helpers/parseSearchParams";
-import type { ListTableRecordsResponse } from "../types";
 
 export const updateExistingRecordHandler = createActionHandler(
   updateExistingRecord,
   {
     server: async ({
       credentials: { baseUrl, apiKey },
-      options: { tableId, filter, viewId, updates },
+      options: { baseId, tableId, filter, viewId, updates },
       logs,
     }) => {
       if (!apiKey) return logs.add("API key is required");
       if (!updates) return logs.add("At least one update is required");
       if (!tableId) return logs.add("Table ID is required");
+      if (!baseId) return logs.add("Base ID is required for NocoDB API v3");
       if (!filter?.comparisons || filter.comparisons.length === 0)
         return logs.add("At least one filter is required");
       try {
-        const listData = await safeKy
-          .get(
-            `${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`,
-            {
-              headers: {
-                "xc-token": apiKey,
-              },
-              searchParams: parseSearchParams({
-                where: convertFilterToWhereClause(filter),
-                viewId,
-                limit: defaultLimitForSearch,
-              }),
-            },
-          )
-          .json<ListTableRecordsResponse>();
+        const client = createNocoDbClient({
+          baseUrl,
+          baseId,
+          tableId,
+          apiKey,
+        });
+        const listData = await client.listRecords(
+          parseSearchParams({
+            where: convertFilterToWhereClause(filter),
+            viewId,
+            limit: defaultLimitForSearch,
+          }),
+        );
 
-        await safeKy.patch(
-          `${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`,
-          {
-            headers: {
-              "xc-token": apiKey,
-            },
-            json: parseRecordsUpdateBody(
-              listData.list.map((item) => item.Id),
-              updates,
-            ),
-          },
+        await client.updateRecords(
+          parseRecordsUpdateBody(
+            listData.list.map((item) => item.Id),
+            updates,
+          ),
         );
 
         await linkRelationUpdatesIfAny({
           baseUrl,
+          baseId,
           apiKey,
           tableId,
           updates,

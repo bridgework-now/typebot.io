@@ -1,6 +1,6 @@
 export type ListTableRecordsResponse = {
   list: Array<{
-    Id: number;
+    Id: string | number;
     [key: string]: any;
   }>;
   pageInfo: {
@@ -13,7 +13,12 @@ export type ListTableRecordsResponse = {
 };
 
 // Non exhaustive list of types
-type UiDataType = "SingleLineText" | "ID" | "Email" | "LinkToAnotherRecord";
+type UiDataType =
+  | "SingleLineText"
+  | "ID"
+  | "Email"
+  | "LinkToAnotherRecord"
+  | "Links";
 
 export type TableMetaResponse = {
   columns: Array<{

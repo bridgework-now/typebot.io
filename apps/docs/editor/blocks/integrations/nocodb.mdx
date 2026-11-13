@@ -6,6 +6,10 @@ import { YoutubeVideo } from '/snippets/youtube-video.mdx'
 
 With the NocoDB block, you can create, update or get data from your NocoDB tables.
 
+All actions use NocoDB API v3 and require both a `Base ID` and a `Table ID`. When upgrading an existing block, enter its `Base ID` in each action before running it. You can find both IDs in the URL when you open the table; see [NocoDB's guide to finding IDs](https://nocodb.com/docs/apis/ids). The Base URL in your account settings continues to support self-hosted instances.
+
+Search and update actions retrieve up to 1000 matching records. Linked fields returned by searches retain the v3 nested record format (`id` and `fields`); ordinary fields and primary key fields remain available by name for response mapping. Relation updates append links without removing existing links.
+
 <YoutubeVideo id="ViKETDQ8Sfg" />
 
 ## How to find my `Table ID`?
