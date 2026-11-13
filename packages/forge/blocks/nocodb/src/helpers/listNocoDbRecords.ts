@@ -22,8 +22,6 @@ export const listNocoDbRecords = async ({
   const identity = await getNocoDbTableIdentity({ baseUrl, apiKey, tableId });
   const resolvedBaseId = baseId ?? identity.baseId;
   const primaryKeyName = identity.primaryKeyName;
-  if (!primaryKeyName)
-    throw new Error("NocoDB table metadata must identify one primary-key column");
   const tableUrl = `${baseUrl ?? defaultBaseUrl}/api/v3/data/${encodeURIComponent(resolvedBaseId)}/${encodeURIComponent(tableId)}`;
   const headers = { "xc-token": apiKey };
   const searchParams = parseSearchParams({ where, viewId });
@@ -49,11 +47,28 @@ export const listNocoDbRecords = async ({
     if (!response.next || response.records.length === 0) break;
   }
 
-  return {
-    list: records.map((record) => ({
+  const list: Record<string, any>[] = [];
+  for (const record of records) {
+    // V3 view results omit hidden fields. Read only the selected records
+    // without the view, preserving its filtering, ordering, and pagination.
+    const fullRecord = viewId
+      ? await safeKy
+          .get(`${tableUrl}/records/${encodeURIComponent(String(record.id))}`, {
+            headers,
+          })
+          .json<NocoDbRecord>()
+      : record;
+    list.push({
       ...record.fields,
-      [primaryKeyName]: record.id,
-    })),
+      ...fullRecord.fields,
+      ...(primaryKeyName ? { [primaryKeyName]: record.id } : {}),
+      ...record.id_fields,
+      ...fullRecord.id_fields,
+    });
+  }
+
+  return {
+    list,
     recordIds: records.map((record) => record.id),
     pageInfo: { totalRows: count },
   };

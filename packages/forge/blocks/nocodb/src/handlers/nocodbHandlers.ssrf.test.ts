@@ -215,7 +215,55 @@ describe("NocoDB v3 migration", () => {
     ]);
   });
 
-  it("pages through a server cap and restores primary-key field names", async () => {
+  it("preserves composite-key searches and restores individual key fields", async () => {
+    replaceFetch(async (input) => {
+      const url = new URL(getRequestUrl(input));
+      if (url.pathname.includes("/api/v2/meta/tables/"))
+        return Response.json({
+          base_id: "base-id",
+          columns: [
+            { title: "Tenant", pk: true },
+            { title: "Number", pk: 1 },
+          ],
+        });
+      if (url.pathname.endsWith("/count"))
+        return Response.json({ count: 2 });
+      return Response.json({
+        records: [
+          {
+            id: "tenant___7",
+            id_fields: { Tenant: "tenant", Number: 7 },
+            fields: { Name: "Alice" },
+          },
+          {
+            id: "tenant___8",
+            fields: { Name: "Bob" },
+          },
+        ],
+        next: null,
+      });
+    });
+
+    const result = await listNocoDbRecords({
+      baseUrl: "http://93.184.216.34",
+      apiKey: "test-api-key",
+      baseId: undefined,
+      tableId: "table-id",
+      where: undefined,
+      viewId: undefined,
+    });
+
+    expect(result).toEqual({
+      list: [
+        { Tenant: "tenant", Number: 7, Name: "Alice" },
+        { Name: "Bob" },
+      ],
+      recordIds: ["tenant___7", "tenant___8"],
+      pageInfo: { totalRows: 2 },
+    });
+  });
+
+  it("pages view results and restores hidden fields and primary-key names", async () => {
     const requestedUrls: URL[] = [];
     replaceFetch(async (input) => {
       const url = new URL(getRequestUrl(input));
@@ -227,6 +275,13 @@ describe("NocoDB v3 migration", () => {
         });
       if (url.pathname.endsWith("/count"))
         return Response.json({ count: 2 });
+      if (url.pathname.includes("/records/")) {
+        const recordId = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+        return Response.json({
+          id: recordId,
+          fields: { Secret: `hidden-${recordId}` },
+        });
+      }
       const page = Number(url.searchParams.get("page"));
       return Response.json({
         records: [{
@@ -248,20 +303,27 @@ describe("NocoDB v3 migration", () => {
 
     expect(result).toEqual({
       list: [
-        { Key: "row-1", Name: "Alice" },
-        { Key: "row-2", Name: "Bob" },
+        { Key: "row-1", Name: "Alice", Secret: "hidden-row-1" },
+        { Key: "row-2", Name: "Bob", Secret: "hidden-row-2" },
       ],
       recordIds: ["row-1", "row-2"],
       pageInfo: { totalRows: 2 },
     });
-    expect(requestedUrls).toHaveLength(4);
-    expect(requestedUrls.slice(1).every((url) =>
-      url.origin === "http://93.184.216.34" &&
+    expect(requestedUrls).toHaveLength(6);
+    expect(requestedUrls.every((url) =>
+      url.origin === "http://93.184.216.34",
+    )).toBe(true);
+    expect(requestedUrls.slice(1, 4).every((url) =>
       url.searchParams.get("viewId") === "view-id" &&
       url.searchParams.get("where") === "(Name,neq,Charlie)",
     )).toBe(true);
-    expect(requestedUrls.slice(2).map((url) => url.searchParams.get("page")))
+    expect(requestedUrls.slice(2, 4).map((url) => url.searchParams.get("page")))
       .toEqual(["1", "2"]);
+    expect(requestedUrls.slice(4).map((url) => url.pathname)).toEqual([
+      "/api/v3/data/base-id/table-id/records/row-1",
+      "/api/v3/data/base-id/table-id/records/row-2",
+    ]);
+    expect(requestedUrls.slice(4).every((url) => url.search === "")).toBe(true);
   });
 
   it("uses the v3 not-equal operator", () => {

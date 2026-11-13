@@ -1,5 +1,6 @@
 export type NocoDbRecord = {
   id: string | number;
+  id_fields?: Record<string, any>;
   fields?: Record<string, any>;
 };
 
