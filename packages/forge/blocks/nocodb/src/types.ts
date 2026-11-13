@@ -1,24 +1,26 @@
+export type NocoDbRecord = {
+  id: string | number;
+  id_fields?: Record<string, any>;
+  fields: Record<string, any>;
+};
+
 export type ListTableRecordsResponse = {
-  list: Array<{
-    Id: number;
-    [key: string]: any;
-  }>;
-  pageInfo: {
-    totalRows: number;
-    page: number;
-    pageSize: number;
-    isFirstPage: boolean;
-    isLastPage: boolean;
-  };
+  records: NocoDbRecord[];
+  next?: string | null;
 };
 
 // Non exhaustive list of types
-type UiDataType = "SingleLineText" | "ID" | "Email" | "LinkToAnotherRecord";
+type UiDataType =
+  | "SingleLineText"
+  | "ID"
+  | "Email"
+  | "LinkToAnotherRecord"
+  | "Links";
 
 export type TableMetaResponse = {
-  columns: Array<{
+  fields: Array<{
     id: string;
     title: string;
-    uidt: UiDataType;
+    type: UiDataType;
   }>;
 };
