@@ -9,8 +9,7 @@ export const updateExistingRecord = createAction({
     baseId: option.string.meta({
       layout: {
         label: "Base ID",
-        isRequired: true,
-        helperText: "Identifier of the project containing the table. Required by NocoDB API v3.",
+        helperText: "Identifier of the project containing the table. Leave empty to discover it from the Table ID.",
       },
     }),
     tableId: option.string.meta({

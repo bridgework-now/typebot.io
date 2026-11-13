@@ -1,7 +1,6 @@
 export type NocoDbRecord = {
   id: string | number;
-  id_fields?: Record<string, any>;
-  fields: Record<string, any>;
+  fields?: Record<string, any>;
 };
 
 export type ListTableRecordsResponse = {
@@ -18,6 +17,7 @@ type UiDataType =
   | "Links";
 
 export type TableMetaResponse = {
+  base_id: string;
   fields: Array<{
     id: string;
     title: string;

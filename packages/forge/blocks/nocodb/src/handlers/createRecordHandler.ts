@@ -18,7 +18,6 @@ export const createRecordHandler = createActionHandler(createRecord, {
       if (!fields || fields.length === 0) return;
       if (!apiKey) return logs.add("API key is required");
       if (!tableId) return logs.add("Table ID is required");
-      if (!baseId) return logs.add("Base ID is required for NocoDB API v3");
 
       const tableMeta = await getNocoDbTableMeta({
         baseUrl,
@@ -35,7 +34,7 @@ export const createRecordHandler = createActionHandler(createRecord, {
       );
 
       const response = await safeKy
-        .post(`${baseUrl ?? defaultBaseUrl}/api/v3/data/${encodeURIComponent(baseId)}/${encodeURIComponent(tableId)}/records`, {
+        .post(`${baseUrl ?? defaultBaseUrl}/api/v3/data/${encodeURIComponent(tableMeta.base_id)}/${encodeURIComponent(tableId)}/records`, {
           headers: {
             "xc-token": apiKey,
           },
@@ -51,7 +50,7 @@ export const createRecordHandler = createActionHandler(createRecord, {
       await linkRelationUpdatesIfAny({
         baseUrl,
         apiKey,
-        baseId,
+        baseId: tableMeta.base_id,
         tableId,
         tableMeta,
         updates: fields.map(({ key, value }) => ({ fieldName: key, value })),

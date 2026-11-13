@@ -14,7 +14,6 @@ export const searchRecordsHandler = createActionHandler(searchRecords, {
   }) => {
     if (!apiKey) return logs.add("API key is required");
     if (!tableId) return logs.add("Table ID is required");
-    if (!baseId) return logs.add("Base ID is required for NocoDB API v3");
     try {
       const data = await listNocoDbRecords({
         baseUrl,

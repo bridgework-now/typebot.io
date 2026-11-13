@@ -20,7 +20,6 @@ export const updateExistingRecordHandler = createActionHandler(
       if (!apiKey) return logs.add("API key is required");
       if (!updates) return logs.add("At least one update is required");
       if (!tableId) return logs.add("Table ID is required");
-      if (!baseId) return logs.add("Base ID is required for NocoDB API v3");
       if (!filter?.comparisons || filter.comparisons.length === 0)
         return logs.add("At least one filter is required");
       try {
@@ -54,7 +53,7 @@ export const updateExistingRecordHandler = createActionHandler(
           // Single-record writes also work when a deployment lowers its bulk cap.
           for (const recordId of listData.recordIds) {
             await safeKy.patch(
-              `${baseUrl ?? defaultBaseUrl}/api/v3/data/${encodeURIComponent(baseId)}/${encodeURIComponent(tableId)}/records`,
+              `${baseUrl ?? defaultBaseUrl}/api/v3/data/${encodeURIComponent(tableMeta.base_id)}/${encodeURIComponent(tableId)}/records`,
               {
                 headers: {
                   "xc-token": apiKey,
@@ -68,7 +67,7 @@ export const updateExistingRecordHandler = createActionHandler(
         await linkRelationUpdatesIfAny({
           baseUrl,
           apiKey,
-          baseId,
+          baseId: tableMeta.base_id,
           tableId,
           tableMeta,
           updates,

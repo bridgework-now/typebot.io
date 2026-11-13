@@ -132,13 +132,55 @@ describe("NocoDB relation requests SSRF protection", () => {
 });
 
 describe("NocoDB v3 migration", () => {
+  for (const handler of handlers) {
+    it(`discovers the base for saved ${handler.name} actions without baseId`, async () => {
+      const requestedUrls: string[] = [];
+      replaceFetch(async (input, init) => {
+        requestedUrls.push(getRequestUrl(input));
+        return createNocoDbResponse(input, init);
+      });
+
+      expect(await handler.execute("http://93.184.216.34", true)).toEqual([]);
+      expect(requestedUrls).toContain(
+        "http://93.184.216.34/api/v2/meta/tables/table-id",
+      );
+      expect(requestedUrls.some((url) =>
+        new URL(url).pathname === "/api/v3/data/base-id/table-id/records",
+      )).toBe(true);
+    });
+  }
+
+  it("preserves an explicit base ID and maps records with omitted fields", async () => {
+    const requestedUrls: string[] = [];
+    replaceFetch(async (input, init) => {
+      requestedUrls.push(getRequestUrl(input));
+      return createNocoDbResponse(input, init);
+    });
+
+    const result = await listNocoDbRecords({
+      baseUrl: "http://93.184.216.34",
+      apiKey: "test-api-key",
+      baseId: "configured-base",
+      tableId: "table-id",
+      where: undefined,
+      viewId: undefined,
+    });
+
+    expect(result.list).toEqual([{ Key: 1 }]);
+    expect(result.recordIds).toEqual([1]);
+    expect(requestedUrls.some((url) =>
+      new URL(url).pathname === "/api/v3/data/configured-base/table-id/records",
+    )).toBe(true);
+    expect(requestedUrls.some((url) => url.includes("/data/base-id/"))).toBe(false);
+  });
+
   it("wraps create fields and keeps the configured server", async () => {
     const writes: { url: string; body: unknown }[] = [];
     replaceFetch(async (input, init) => {
       if (init?.method === "POST") {
         writes.push({
           url: getRequestUrl(input),
-          body: JSON.parse(String(init.body)),
+          body: await new Response(init.body).json(),
         });
       }
       return createNocoDbResponse(input, init);
@@ -163,7 +205,7 @@ describe("NocoDB v3 migration", () => {
           next: null,
         });
       if (init?.method === "PATCH")
-        writes.push(JSON.parse(String(init.body)));
+        writes.push(await new Response(init.body).json());
       return createNocoDbResponse(input, init);
     });
 
@@ -178,13 +220,17 @@ describe("NocoDB v3 migration", () => {
     replaceFetch(async (input) => {
       const url = new URL(getRequestUrl(input));
       requestedUrls.push(url);
+      if (url.pathname.includes("/api/v2/meta/tables/"))
+        return Response.json({
+          base_id: "base-id",
+          columns: [{ title: "Key", pk: true }],
+        });
       if (url.pathname.endsWith("/count"))
         return Response.json({ count: 2 });
       const page = Number(url.searchParams.get("page"));
       return Response.json({
         records: [{
           id: `row-${page}`,
-          id_fields: { Key: `row-${page}` },
           fields: { Name: page === 1 ? "Alice" : "Bob" },
         }],
         next: page === 1 ? "https://other.example/records?page=2" : null,
@@ -208,13 +254,13 @@ describe("NocoDB v3 migration", () => {
       recordIds: ["row-1", "row-2"],
       pageInfo: { totalRows: 2 },
     });
-    expect(requestedUrls).toHaveLength(3);
-    expect(requestedUrls.every((url) =>
+    expect(requestedUrls).toHaveLength(4);
+    expect(requestedUrls.slice(1).every((url) =>
       url.origin === "http://93.184.216.34" &&
       url.searchParams.get("viewId") === "view-id" &&
       url.searchParams.get("where") === "(Name,neq,Charlie)",
     )).toBe(true);
-    expect(requestedUrls.slice(1).map((url) => url.searchParams.get("page")))
+    expect(requestedUrls.slice(2).map((url) => url.searchParams.get("page")))
       .toEqual(["1", "2"]);
   });
 
@@ -228,7 +274,7 @@ describe("NocoDB v3 migration", () => {
     const writes: unknown[] = [];
     replaceFetch(async (_input, init) => {
       if (init?.method === "POST") {
-        writes.push(JSON.parse(String(init.body)));
+        writes.push(await new Response(init.body).json());
         return Response.json({ success: true });
       }
       return Response.json({ fields: [{
@@ -243,12 +289,12 @@ describe("NocoDB v3 migration", () => {
   });
 });
 
-const executeCreateRecord = async (baseUrl: string) => {
+const executeCreateRecord = async (baseUrl: string, legacy = false) => {
   const errors: string[] = [];
   await createRecordHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
+      ...(legacy ? {} : { baseId: "base-id" }),
       tableId: "table-id",
       fields: [{ key: "Name", value: "Alice" }],
     }),
@@ -259,12 +305,12 @@ const executeCreateRecord = async (baseUrl: string) => {
   return errors;
 };
 
-const executeSearchRecords = async (baseUrl: string) => {
+const executeSearchRecords = async (baseUrl: string, legacy = false) => {
   const errors: string[] = [];
   await searchRecordsHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
+      ...(legacy ? {} : { baseId: "base-id" }),
       tableId: "table-id",
     }),
     variables: createVariablesStore(),
@@ -274,12 +320,12 @@ const executeSearchRecords = async (baseUrl: string) => {
   return errors;
 };
 
-const executeUpdateExistingRecord = async (baseUrl: string) => {
+const executeUpdateExistingRecord = async (baseUrl: string, legacy = false) => {
   const errors: string[] = [];
   await updateExistingRecordHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
+      ...(legacy ? {} : { baseId: "base-id" }),
       tableId: "table-id",
       filter: {
         comparisons: [{ input: "Name", operator: "Equal", value: "Alice" }],
@@ -345,14 +391,19 @@ const createNocoDbResponse = (
   init?: Parameters<typeof fetch>[1],
 ) => {
   const url = new URL(getRequestUrl(input));
+  if (url.pathname.includes("/api/v2/meta/tables/"))
+    return Response.json({
+      base_id: "base-id",
+      columns: [{ title: "Key", pk: 1 }],
+    });
   if (url.pathname.includes("/api/v3/meta/bases/"))
-    return Response.json({ fields: [] });
+    return Response.json({ base_id: "base-id", fields: [] });
   if (url.pathname.endsWith("/count")) return Response.json({ count: 1 });
   if (init?.method === "POST")
     return Response.json({ records: [{ id: 1, fields: {} }] });
   if (init?.method === "GET")
     return Response.json({
-      records: [{ id: 1, id_fields: { Id: 1 }, fields: {} }],
+      records: [{ id: 1 }],
       next: null,
     });
   return new Response(null, { status: 200 });
