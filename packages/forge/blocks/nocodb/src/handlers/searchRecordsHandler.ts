@@ -1,34 +1,31 @@
 import { createActionHandler } from "@typebot.io/forge";
-import { safeKy } from "@typebot.io/lib/ky";
 import { parseUnknownError } from "@typebot.io/lib/parseUnknownError";
 import { isDefined, isNotDefined } from "@typebot.io/lib/utils";
 import { searchRecords } from "../actions/searchRecords";
-import { defaultBaseUrl, defaultLimitForSearch } from "../constants";
+import { defaultLimitForSearch } from "../constants";
 import { convertFilterToWhereClause } from "../helpers/convertFilterToWhereClause";
-import { parseSearchParams } from "../helpers/parseSearchParams";
-import type { ListTableRecordsResponse } from "../types";
+import { createNocoDbClient } from "../helpers/createNocoDbClient";
 
 export const searchRecordsHandler = createActionHandler(searchRecords, {
   server: async ({
-    credentials: { baseUrl, apiKey },
+    credentials: { baseUrl, baseId, apiKey },
     options: { tableId, responseMapping, filter, returnType, viewId },
     variables,
     logs,
   }) => {
     if (!apiKey) return logs.add("API key is required");
+    if (!tableId) return logs.add("Table ID is required");
     try {
-      const data = await safeKy
-        .get(`${baseUrl ?? defaultBaseUrl}/api/v2/tables/${tableId}/records`, {
-          headers: {
-            "xc-token": apiKey,
-          },
-          searchParams: parseSearchParams({
-            where: convertFilterToWhereClause(filter),
-            viewId,
-            limit: defaultLimitForSearch,
-          }),
-        })
-        .json<ListTableRecordsResponse>();
+      const data = await createNocoDbClient({
+        baseUrl,
+        baseId,
+        apiKey,
+        tableId,
+      }).listRecords({
+        where: convertFilterToWhereClause(filter),
+        viewId,
+        limit: defaultLimitForSearch,
+      });
 
       let filterIndex: number | undefined;
 
