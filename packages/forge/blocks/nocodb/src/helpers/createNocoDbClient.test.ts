@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "bun:test";
 import { createNocoDbClient } from "./createNocoDbClient";
 import { linkRelationUpdatesIfAny } from "./linkRelationUpdatesIfAny";
+import { resolveNocoDbBaseId } from "./resolveNocoDbBaseId";
 
 const originalFetch = globalThis.fetch;
 
@@ -111,6 +112,53 @@ it("rejects a missing create response id instead of linking undefined", async ()
   await expect(client().createRecord({ Name: "Alice" })).rejects.toThrow(
     "NocoDB did not return the created record",
   );
+});
+
+it("keeps an explicit Base ID without making a discovery request", async () => {
+  const requests = mockResponses([]);
+  expect(
+    await resolveNocoDbBaseId({
+      baseUrl: host,
+      baseId: "configured-base",
+      apiKey: "test-token",
+      tableId: "table-id",
+    }),
+  ).toBe("configured-base");
+  expect(requests).toEqual([]);
+});
+
+it("resolves saved actions on the configured host or cloud default", async () => {
+  for (const baseUrl of [host, undefined]) {
+    const requests = mockResponses([{ base_id: "resolved-base" }]);
+    expect(
+      await resolveNocoDbBaseId({
+        baseUrl,
+        baseId: undefined,
+        apiKey: "test-token",
+        tableId: "table/id",
+      }),
+    ).toBe("resolved-base");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url.origin).toBe(baseUrl ?? "https://app.nocodb.com");
+    expect(requests[0]?.url.pathname).toBe("/api/v2/meta/tables/table%2Fid");
+    expect(requests[0]?.method).toBe("GET");
+    expect(requests[0]?.headers.get("xc-token")).toBe("test-token");
+  }
+});
+
+it("rejects absent or invalid discovery IDs before any record request", async () => {
+  for (const base_id of [undefined, "", 42]) {
+    const requests = mockResponses([{ base_id }]);
+    await expect(
+      resolveNocoDbBaseId({
+        baseUrl: host,
+        baseId: "",
+        apiKey: "test-token",
+        tableId: "table-id",
+      }),
+    ).rejects.toThrow("Could not resolve NocoDB Base ID");
+    expect(requests).toHaveLength(1);
+  }
 });
 
 const host = "http://93.184.216.34";

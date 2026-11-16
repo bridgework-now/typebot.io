@@ -134,7 +134,6 @@ const executeCreateRecord = async (baseUrl: string) => {
   await createRecordHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
       tableId: "table-id",
       fields: [{ key: "Name", value: "Alice" }],
     }),
@@ -150,7 +149,6 @@ const executeSearchRecords = async (baseUrl: string) => {
   await searchRecordsHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
       tableId: "table-id",
     }),
     variables: createVariablesStore(),
@@ -165,7 +163,6 @@ const executeUpdateExistingRecord = async (baseUrl: string) => {
   await updateExistingRecordHandler.server?.({
     credentials: { baseUrl, apiKey: "test-api-key" },
     options: Object.assign(Object.create(null), {
-      baseId: "base-id",
       tableId: "table-id",
       filter: {
         comparisons: [{ input: "Name", operator: "Equal", value: "Alice" }],
@@ -231,6 +228,8 @@ const createNocoDbResponse = (
   init?: Parameters<typeof fetch>[1],
 ) => {
   const url = new URL(getRequestUrl(input));
+  if (url.pathname.includes("/api/v2/meta/tables/"))
+    return Response.json({ base_id: "base-id" });
   if (url.pathname.includes("/api/v3/meta/bases/"))
     return Response.json({ fields: [] });
   if (url.pathname.endsWith("/count")) return Response.json({ count: 1 });

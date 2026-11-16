@@ -4,18 +4,24 @@ import { createRecord } from "../actions/createRecord";
 import { createNocoDbClient } from "../helpers/createNocoDbClient";
 import { linkRelationUpdatesIfAny } from "../helpers/linkRelationUpdatesIfAny";
 import { parseRecordsCreateBody } from "../helpers/parseRecordCreateBody";
+import { resolveNocoDbBaseId } from "../helpers/resolveNocoDbBaseId";
 
 export const createRecordHandler = createActionHandler(createRecord, {
   server: async ({
     credentials: { baseUrl, apiKey },
-    options: { baseId, tableId, fields },
+    options: { baseId: configuredBaseId, tableId, fields },
     logs,
   }) => {
     try {
       if (!fields || fields.length === 0) return;
       if (!apiKey) return logs.add("API key is required");
       if (!tableId) return logs.add("Table ID is required");
-      if (!baseId) return logs.add("Base ID is required");
+      const baseId = await resolveNocoDbBaseId({
+        baseUrl,
+        baseId: configuredBaseId,
+        apiKey,
+        tableId,
+      });
 
       const client = createNocoDbClient({ baseUrl, baseId, apiKey, tableId });
       const response = await client.createRecord(parseRecordsCreateBody(fields));
