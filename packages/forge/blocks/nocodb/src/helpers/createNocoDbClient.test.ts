@@ -15,10 +15,64 @@ const params = {
 };
 
 describe("NocoDB v3 migration", () => {
-  it("requires a base ID before making requests", () => {
-    expect(() =>
-      createNocoDbClient({ ...params, baseId: undefined }),
-    ).toThrow("Base ID is required");
+  it.each([
+    { baseUrl: undefined, baseId: undefined, origin: "https://app.nocodb.com" },
+    { baseUrl: params.baseUrl, baseId: "", origin: params.baseUrl },
+  ])("preserves saved v2 credentials with $baseUrl", async ({ baseUrl, baseId, origin }) => {
+    const requests: { url: URL; method: string; body: unknown }[] = [];
+    const metadata = {
+      columns: [{ id: "relation-id", title: "Related", uidt: "LinkToAnotherRecord" }],
+    };
+    const listed = {
+      list: [{ Id: 7, Name: "Alice", Hidden: "retained" }],
+      pageInfo: {
+        totalRows: 12,
+        page: 1,
+        pageSize: 3,
+        isFirstPage: true,
+        isLastPage: false,
+      },
+    };
+    replaceFetch(async (input, init) => {
+      const url = new URL(getRequestUrl(input));
+      expect(new Headers(init?.headers).get("xc-token")).toBe(params.apiKey);
+      requests.push({
+        url,
+        method: init?.method ?? "GET",
+        body: init?.body ? await new Response(init.body).json() : undefined,
+      });
+      if (url.pathname.includes("/meta/")) return Response.json(metadata);
+      if (init?.method === "GET") return Response.json(listed);
+      if (init?.method === "PATCH") return new Response(null, { status: 200 });
+      if (url.pathname.includes("/links/")) return Response.json(true);
+      return Response.json({ Id: 7 });
+    });
+
+    const client = createNocoDbClient({ ...params, baseUrl, baseId });
+    const fields = { Name: "Alice", Related: "42" };
+    const updates = [{ Id: 7, Name: null, Related: "42" }];
+    const searchParams = { where: "(Name,eq,Alice)", viewId: "view-id", limit: "3" };
+    expect(await client.createRecord(fields)).toEqual({ Id: 7 });
+    expect(await client.listRecords(searchParams)).toEqual(listed);
+    await client.updateRecords(updates);
+    expect(await client.getTableMetadata()).toEqual(metadata);
+    await client.linkRecords("relation-id", 7, ["42"]);
+
+    const recordsUrl = `${origin}/api/v2/tables/table-id/records`;
+    expect(requests.map(({ url, method, body }) => ({
+      url: `${url.origin}${url.pathname}`, method, body,
+    }))).toEqual([
+      { url: recordsUrl, method: "POST", body: fields },
+      { url: recordsUrl, method: "GET", body: undefined },
+      { url: recordsUrl, method: "PATCH", body: updates },
+      { url: `${origin}/api/v2/meta/tables/table-id`, method: "GET", body: undefined },
+      {
+        url: `${origin}/api/v2/tables/table-id/links/relation-id/records/7`,
+        method: "POST",
+        body: [{ Id: "42" }],
+      },
+    ]);
+    expect(Object.fromEntries(requests[1]!.url.searchParams)).toEqual(searchParams);
   });
 
   it("retains host overrides, pagination, primary fields and hidden view fields", async () => {

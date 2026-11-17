@@ -19,9 +19,9 @@ export const auth = createAuth({
     baseId: option.string.meta({
       layout: {
         label: "Base ID",
-        isRequired: true,
+        isRequired: false,
         helperText:
-          "Required for NocoDB v3. Copy the base ID from the table URL.",
+          "Copy the base ID from the table URL to use NocoDB v3. Leave blank to retain v2 for an existing connection.",
         withVariableButton: false,
       },
     }),

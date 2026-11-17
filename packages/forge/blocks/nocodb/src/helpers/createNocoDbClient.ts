@@ -4,7 +4,7 @@ import type { ListTableRecordsResponse, TableMetaResponse } from "../types";
 
 type Params = {
   baseUrl: string | undefined;
-  baseId: string | undefined;
+  baseId?: string;
   apiKey: string;
   tableId: string;
 };
@@ -25,10 +25,42 @@ export const createNocoDbClient = ({
   apiKey,
   tableId,
 }: Params) => {
-  if (!baseId) throw new Error("Base ID is required for NocoDB v3");
   if (!tableId) throw new Error("Table ID is required");
 
   const origin = baseUrl ?? defaultBaseUrl;
+  // Saved credentials predate baseId. Keep their documented v2 behavior
+  // until the connection is explicitly configured for v3.
+  if (!baseId) {
+    const dataUrl = `${origin}/api/v2/tables/${encodeURIComponent(tableId)}`;
+    const headers = { "xc-token": apiKey };
+    return {
+      getTableMetadata: () =>
+        safeKy
+          .get(`${origin}/api/v2/meta/tables/${encodeURIComponent(tableId)}`, {
+            headers,
+          })
+          .json<TableMetaResponse>(),
+      listRecords: (searchParams: Record<string, string>) =>
+        safeKy
+          .get(`${dataUrl}/records`, { headers, searchParams })
+          .json<ListTableRecordsResponse>(),
+      createRecord: (fields: Record<string, unknown>) =>
+        safeKy
+          .post(`${dataUrl}/records`, { headers, json: fields })
+          .json<{ Id: string | number }>(),
+      updateRecords: async (records: Record<string, any>[]) => {
+        await safeKy.patch(`${dataUrl}/records`, { headers, json: records });
+      },
+      linkRecords: (fieldId: string, recordId: string | number, ids: string[]) =>
+        safeKy
+          .post(
+            `${dataUrl}/links/${encodeURIComponent(fieldId)}/records/${encodeURIComponent(recordId)}`,
+            { headers, json: ids.map((id) => ({ Id: id })) },
+          )
+          .json(),
+    };
+  }
+
   const encodedBaseId = encodeURIComponent(baseId);
   const encodedTableId = encodeURIComponent(tableId);
   const dataUrl = `${origin}/api/v3/data/${encodedBaseId}/${encodedTableId}`;
