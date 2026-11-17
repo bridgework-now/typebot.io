@@ -10,8 +10,8 @@ export const searchRecords = createAction({
     baseId: option.string.meta({
       layout: {
         label: "Base ID",
-        isRequired: true,
-        helperText: "Identifier of the project containing the table.",
+        helperText:
+          "Identifier of the base containing the table. Supply it to use API v3; leave blank for compatibility with existing API v2 actions.",
       },
     }),
     tableId: option.string.meta({

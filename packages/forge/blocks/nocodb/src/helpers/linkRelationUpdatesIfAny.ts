@@ -27,7 +27,10 @@ export const linkRelationUpdatesIfAny = async ({
     .map((col) => ({
       id: col.id,
       value: transformValToArray(
-        updates.find((update) => update.fieldName === col.title)?.value,
+        updates.find(
+          (update) =>
+            update.fieldName === col.title || update.fieldName === col.id,
+        )?.value,
       ),
     }))
     .filter((update) => isDefined(update.value));

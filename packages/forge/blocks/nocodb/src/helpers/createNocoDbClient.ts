@@ -1,6 +1,6 @@
 import { safeKy } from "@typebot.io/lib/ky";
 import { defaultBaseUrl } from "../constants";
-import type { ListTableRecordsResponse } from "../types";
+import type { ListTableRecordsResponse, TableMetaResponse } from "../types";
 import { parseSearchParams } from "./parseSearchParams";
 
 export const createNocoDbClient = ({
@@ -14,14 +14,56 @@ export const createNocoDbClient = ({
   baseId: string | undefined;
   tableId: string | undefined;
 }) => {
-  if (!baseId) throw new Error("Base ID is required");
   if (!tableId) throw new Error("Table ID is required");
 
   const origin = baseUrl ?? defaultBaseUrl;
-  const basePath = encodeURIComponent(baseId);
   const tablePath = encodeURIComponent(tableId);
-  const dataUrl = `${origin}/api/v3/data/${basePath}/${tablePath}`;
   const headers = { "xc-token": apiKey };
+
+  // Saved actions predate baseId. Keep their existing API and response contracts.
+  if (!baseId) {
+    const recordsUrl = `${origin}/api/v2/tables/${tablePath}/records`;
+    return {
+      getTable: async () => {
+        const table = await safeKy
+          .get(`${origin}/api/v2/meta/tables/${tablePath}`, { headers })
+          .json<TableMetaResponse>();
+        return {
+          fields: table.columns.map(({ id, title, uidt }) => ({
+            id,
+            title,
+            type: uidt,
+          })),
+        };
+      },
+      create: async (fields: Record<string, any>) =>
+        safeKy.post(recordsUrl, { headers, json: fields }).json<{ Id: number }>(),
+      list: async (params: {
+        where: string | undefined;
+        viewId: string | undefined;
+        limit: number;
+      }) =>
+        safeKy
+          .get(recordsUrl, {
+            headers,
+            searchParams: parseSearchParams(params),
+          })
+          .json<ListTableRecordsResponse>(),
+      update: async (records: Record<string, any>[]) => {
+        await safeKy.patch(recordsUrl, { headers, json: records });
+      },
+      link: async (fieldId: string, recordId: string | number, ids: string[]) =>
+        safeKy
+          .post(
+            `${origin}/api/v2/tables/${tablePath}/links/${encodeURIComponent(fieldId)}/records/${encodeURIComponent(recordId)}`,
+            { headers, json: ids.map((Id) => ({ Id })) },
+          )
+          .json(),
+    };
+  }
+
+  const basePath = encodeURIComponent(baseId);
+  const dataUrl = `${origin}/api/v3/data/${basePath}/${tablePath}`;
   let tablePromise: Promise<TableSchema> | undefined;
   const getTable = () => {
     tablePromise ??= safeKy

@@ -199,12 +199,19 @@ describe("NocoDB v3 compatibility", () => {
     });
 
     const client = createClient();
-    expect(await client.create({ Name: "Alice", Related: "42" })).toEqual({ Id: "created-id" });
+    expect(await client.create({ Name: "Alice", related: "42" })).toEqual({ Id: "created-id" });
     await client.update([
-      { Id: "created-id", Name: null, Related: "42" },
+      { Id: "created-id", Name: null, related: "42" },
       { Id: "second-id", Name: "Bob" },
     ]);
-    await client.link("related", "created-id", ["42"]);
+    await linkRelationUpdatesIfAny({
+      baseUrl: "http://93.184.216.34",
+      apiKey: "test-api-key",
+      baseId: "base-id",
+      tableId: "table-id",
+      updates: [{ fieldName: "related", value: "42" }],
+      recordIdsToUpdate: ["created-id"],
+    });
 
     expect(writes).toEqual([
       { method: "POST", path: "/api/v3/data/base-id/table-id/records", body: { fields: { Name: "Alice" } } },
@@ -214,15 +221,43 @@ describe("NocoDB v3 compatibility", () => {
     ]);
   });
 
-  it("logs a missing base ID before making requests", async () => {
-    let requests = 0;
-    replaceFetch(async () => {
-      requests++;
-      return Response.json({});
+  it("preserves saved actions without a base ID using the v2 contracts", async () => {
+    const requests: { method: string; url: URL; body: unknown }[] = [];
+    const listResponse = {
+      list: [{ Id: 7, Name: "Alice" }],
+      pageInfo: {
+        totalRows: 1,
+        page: 1,
+        pageSize: 1,
+        isFirstPage: true,
+        isLastPage: true,
+      },
+    };
+    replaceFetch(async (input, init) => {
+      const request = new Request(input, init);
+      const url = new URL(request.url);
+      expect(request.headers.get("xc-token")).toBe("test-api-key");
+      requests.push({
+        method: request.method,
+        url,
+        body: request.method === "GET" ? undefined : await request.json(),
+      });
+      if (url.pathname.includes("/meta/"))
+        return Response.json({
+          columns: [{ id: "related", title: "Related", uidt: "LinkToAnotherRecord" }],
+        });
+      if (request.method === "GET") return Response.json(listResponse);
+      if (url.pathname.includes("/links/")) return Response.json({});
+      if (request.method === "POST") return Response.json({ Id: 7 });
+      return new Response(null, { status: 200 });
     });
+    const credentials = {
+      baseUrl: "http://93.184.216.34",
+      apiKey: "test-api-key",
+    };
     const errors: string[] = [];
     await createRecordHandler.server?.({
-      credentials: { apiKey: "test-api-key" },
+      credentials,
       options: Object.assign(Object.create(null), {
         tableId: "table-id",
         fields: [{ key: "Name", value: "Alice" }],
@@ -231,8 +266,37 @@ describe("NocoDB v3 compatibility", () => {
       logs: createLogsStore(errors),
       sessionStore: Object.create(null),
     });
-    expect(requests).toBe(0);
-    expect(errors.join(" ")).toContain("Base ID is required");
+    const client = createNocoDbClient({
+      ...credentials,
+      baseId: undefined,
+      tableId: "table-id",
+    });
+    const where = convertFilterToWhereClause({
+      comparisons: [{ input: "Name", operator: "Not equal", value: "Bob" }],
+    }, "v2");
+    expect(where).toBe("(Name,ne,Bob)");
+    expect(await client.list({ where, viewId: "view-id", limit: 1000 })).toEqual(listResponse);
+    await client.update([{ Id: 7, Name: null }]);
+    await linkRelationUpdatesIfAny({
+      ...credentials,
+      baseId: undefined,
+      tableId: "table-id",
+      updates: [{ fieldName: "related", value: "42" }],
+      recordIdsToUpdate: [7],
+    });
+    expect(errors).toEqual([]);
+    expect(requests.map(({ method, url, body }) => ({ method, path: url.pathname, body }))).toEqual([
+      { method: "POST", path: "/api/v2/tables/table-id/records", body: { Name: "Alice" } },
+      { method: "GET", path: "/api/v2/meta/tables/table-id", body: undefined },
+      { method: "GET", path: "/api/v2/tables/table-id/records", body: undefined },
+      { method: "PATCH", path: "/api/v2/tables/table-id/records", body: [{ Id: 7, Name: null }] },
+      { method: "GET", path: "/api/v2/meta/tables/table-id", body: undefined },
+      { method: "POST", path: "/api/v2/tables/table-id/links/related/records/7", body: [{ Id: "42" }] },
+    ]);
+    expect(requests.every(({ url }) => url.origin === credentials.baseUrl)).toBe(true);
+    expect(requests[2]?.url.searchParams.get("where")).toBe(where);
+    expect(requests[2]?.url.searchParams.get("viewId")).toBe("view-id");
+    expect(requests[2]?.url.searchParams.get("limit")).toBe("1000");
   });
 
   it("quotes filter delimiters and uses the documented inequality operator", () => {

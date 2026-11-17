@@ -21,7 +21,7 @@ export const searchRecordsHandler = createActionHandler(searchRecords, {
         baseId,
         tableId,
       }).list({
-        where: convertFilterToWhereClause(filter),
+        where: convertFilterToWhereClause(filter, baseId ? "v3" : "v2"),
         viewId,
         limit: defaultLimitForSearch,
       });

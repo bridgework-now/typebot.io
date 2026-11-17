@@ -28,7 +28,7 @@ export const updateExistingRecordHandler = createActionHandler(
           tableId,
         });
         const listData = await client.list({
-          where: convertFilterToWhereClause(filter),
+          where: convertFilterToWhereClause(filter, baseId ? "v3" : "v2"),
           viewId,
           limit: defaultLimitForSearch,
         });
