@@ -1,4 +1,4 @@
-// See `where`: https://docs.nocodb.com/0.109.7/developer-resources/rest-apis/#query-params
+// See `where`: https://nocodb.com/docs/apis/filtering#v3-where-query-parameter
 // Example: (colName,eq,colValue)~or(colName2,gt,colValue2)
 
 import { isEmpty } from "@typebot.io/lib/utils";
@@ -19,25 +19,27 @@ export const convertFilterToWhereClause = (
 
   const where = filter.comparisons
     .map((comparison) => {
+      const field = JSON.stringify(comparison.input ?? "");
+      const value = JSON.stringify(comparison.value ?? "");
       switch (comparison.operator) {
         case "Not equal":
-          return `(${comparison.input},ne,${comparison.value})`;
+          return `(${field},neq,${value})`;
         case "Contains":
-          return `(${comparison.input},like,%${comparison.value}%)`;
+          return `(${field},like,${JSON.stringify(`%${comparison.value ?? ""}%`)})`;
         case "Greater than":
-          return `(${comparison.input},gt,${comparison.value})`;
+          return `(${field},gt,${value})`;
         case "Less than":
-          return `(${comparison.input},lt,${comparison.value})`;
+          return `(${field},lt,${value})`;
         case "Is set":
-          return `(${comparison.input},isnot,null)`;
+          return `(${field},isnot,null)`;
         case "Is empty":
-          return `(${comparison.input},is,null)`;
+          return `(${field},is,null)`;
         case "Starts with":
-          return `(${comparison.input},like,${comparison.value}%)`;
+          return `(${field},like,${JSON.stringify(`${comparison.value ?? ""}%`)})`;
         case "Ends with":
-          return `(${comparison.input},like,%${comparison.value})`;
+          return `(${field},like,${JSON.stringify(`%${comparison.value ?? ""}`)})`;
         default:
-          return `(${comparison.input},eq,${comparison.value})`;
+          return `(${field},eq,${value})`;
       }
     })
     .filter(Boolean)

@@ -1,6 +1,6 @@
 export type ListTableRecordsResponse = {
   list: Array<{
-    Id: number;
+    Id: string | number;
     [key: string]: any;
   }>;
   pageInfo: {
