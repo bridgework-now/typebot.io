@@ -33,7 +33,7 @@ export const handleGetPhoneNumber = async ({
     };
   try {
     const { display_phone_number } = await ky
-      .get(`${env.WHATSAPP_CLOUD_API_URL}/v17.0/${credentials.phoneNumberId}`, {
+      .get(`${env.WHATSAPP_CLOUD_API_URL}/v26.0/${credentials.phoneNumberId}`, {
         headers: {
           Authorization: `Bearer ${credentials.systemUserAccessToken}`,
         },
