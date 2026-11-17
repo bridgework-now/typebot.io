@@ -21,7 +21,7 @@ export const convertFilterToWhereClause = (
     .map((comparison) => {
       switch (comparison.operator) {
         case "Not equal":
-          return `(${comparison.input},ne,${comparison.value})`;
+          return `(${comparison.input},neq,${comparison.value})`;
         case "Contains":
           return `(${comparison.input},like,%${comparison.value}%)`;
         case "Greater than":

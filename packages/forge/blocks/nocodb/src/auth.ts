@@ -16,6 +16,15 @@ export const auth = createAuth({
         },
       })
       .transform((value) => value?.replace(/\/$/, "")),
+    baseId: option.string.meta({
+      layout: {
+        label: "Base ID",
+        isRequired: true,
+        helperText:
+          "Required for NocoDB v3. Copy the base ID from the table URL.",
+        withVariableButton: false,
+      },
+    }),
     apiKey: option.string.meta({
       layout: {
         label: "API Token",
