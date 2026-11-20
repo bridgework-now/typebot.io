@@ -658,12 +658,16 @@ const getStripeSubscriptions = async (stripeId: string) => {
 
   const subscriptions_list = [];
   for (const sub of subscriptions.data) {
+    const currentPeriodEnd = sub.items.data
+      .map((item) => item.current_period_end)
+      .sort((a, b) => a - b)
+      .at(0);
     subscriptions_list.push({
       subscription_id: sub.id,
       start_date: new Date(sub.start_date * 1000).toISOString().split("T")[0],
       status: sub.status,
-      current_period_end: sub.current_period_end
-        ? new Date(sub.current_period_end * 1000).toISOString().split("T")[0]
+      current_period_end: currentPeriodEnd
+        ? new Date(currentPeriodEnd * 1000).toISOString().split("T")[0]
         : "N/A",
       cancel_at_period_end: sub.cancel_at_period_end,
       canceled_at: sub.canceled_at

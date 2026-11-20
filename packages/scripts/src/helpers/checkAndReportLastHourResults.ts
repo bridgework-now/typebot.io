@@ -14,6 +14,7 @@ import type { TelemetryEvent } from "@typebot.io/telemetry/schemas";
 import { trackEvents } from "@typebot.io/telemetry/trackEvents";
 import type { Workspace } from "@typebot.io/workspaces/schemas";
 import Stripe from "stripe";
+import { createUsageRecord } from "./stripe/createUsageRecord";
 
 const LIMIT_EMAIL_TRIGGER_PERCENT = 0.75;
 
@@ -57,6 +58,7 @@ export const checkAndReportLastHourResults = async () => {
     throw new Error("Missing STRIPE_SECRET_KEY env variable");
 
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
 
@@ -324,7 +326,8 @@ const reportUsageToStripe = async (
 
   const idempotencyKey = createId();
 
-  return stripe.subscriptionItems.createUsageRecord(
+  return createUsageRecord(
+    stripe,
     subscriptionItem.id,
     {
       quantity: totalResultsLastHour,
@@ -359,6 +362,7 @@ const getUsage = async ({
 
   const now = new Date();
   const usagePeriodStart = subscription
+    // @ts-ignore stripe-version-2024-09-30.acacia
     ? new Date(subscription.current_period_start * 1000)
     : new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -588,6 +592,7 @@ const isSuspiciousWorkspace = async (
   if (totalChatsUsed < proLimit) return false;
 
   const daysSincePeriodStart = Math.max(
+    // @ts-ignore stripe-version-2024-09-30.acacia
     (Date.now() / 1000 - subscription.current_period_start) / 86400,
     1,
   );
@@ -649,6 +654,7 @@ const chargeAndResetBillingCycle = async (
   { stripe }: { stripe: Stripe },
 ) =>
   stripe.subscriptions.update(subscription.id, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     billing_cycle_anchor: "now",
     proration_behavior: "create_prorations",
     payment_behavior: "error_if_incomplete",

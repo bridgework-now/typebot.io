@@ -14,7 +14,17 @@ const createChatsPrices = async () => {
   )
     return;
 
+  const proStripeChatTiers = proChatTiers.map((tier) =>
+    "unit_amount_decimal" in tier
+      ? {
+          ...tier,
+          unit_amount_decimal: Stripe.Decimal.from(tier.unit_amount_decimal),
+        }
+      : tier,
+  );
+
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
 
@@ -24,6 +34,7 @@ const createChatsPrices = async () => {
     recurring: {
       interval: "month",
       usage_type: "metered",
+      // @ts-ignore stripe-version-2024-09-30.acacia
       aggregate_usage: "last_during_period",
     },
     tiers: starterChatTiers,
@@ -44,16 +55,17 @@ const createChatsPrices = async () => {
     recurring: {
       interval: "month",
       usage_type: "metered",
+      // @ts-ignore stripe-version-2024-09-30.acacia
       aggregate_usage: "last_during_period",
     },
-    tiers: proChatTiers,
+    tiers: proStripeChatTiers,
     tiers_mode: "volume",
     tax_behavior: "exclusive",
     product: chatsProductId,
     currency_options: {
       eur: {
         tax_behavior: "exclusive",
-        tiers: proChatTiers,
+        tiers: proStripeChatTiers,
       },
     },
   });

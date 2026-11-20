@@ -52,6 +52,7 @@ export const handleGetSubscriptionPreview = async ({
     });
 
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
   const { data } = await stripe.subscriptions.list({
@@ -90,11 +91,13 @@ export const handleGetSubscriptionPreview = async ({
     },
   ];
 
-  const upcomingInvoice = await stripe.invoices.retrieveUpcoming({
+  const upcomingInvoice = await stripe.invoices.createPreview({
     customer: workspace.stripeId,
     subscription: subscription?.id,
-    subscription_items: items,
-    subscription_proration_behavior: "always_invoice",
+    subscription_details: {
+      items,
+      proration_behavior: "always_invoice",
+    },
   });
 
   return {

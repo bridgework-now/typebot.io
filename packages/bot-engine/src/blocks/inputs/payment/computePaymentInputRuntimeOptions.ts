@@ -60,6 +60,7 @@ const createStripePaymentIntent = async (
     isPreview && stripeKeys?.test?.secretKey
       ? stripeKeys.test.secretKey
       : stripeKeys.live.secretKey,
+    // @ts-ignore stripe-version-2024-09-30.acacia
     { apiVersion: "2024-09-30.acacia" },
   );
   const currency = options?.currency || defaultPaymentInputOptions.currency;
