@@ -61,16 +61,41 @@ export default [
         };
 
       try {
-        const response = await got
-          .get(`${baseUrl}/v1/voices`, {
-            headers: {
-              "xi-api-key": credentials.apiKey,
-            },
-          })
-          .json<VoicesResponse>();
+        const voices: VoicesResponse["voices"] = [];
+        let nextPageToken: string | undefined;
+        const seenPageTokens = new Set<string>();
+
+        while (true) {
+          const response = await got
+            .get(`${baseUrl}/v2/voices`, {
+              headers: {
+                "xi-api-key": credentials.apiKey,
+              },
+              searchParams: {
+                page_size: 100,
+                include_total_count: false,
+                ...(nextPageToken === undefined
+                  ? {}
+                  : { next_page_token: nextPageToken }),
+              },
+            })
+            .json<VoicesResponse>();
+
+          voices.push(...response.voices);
+          if (!response.has_more) break;
+
+          if (
+            !response.next_page_token ||
+            seenPageTokens.has(response.next_page_token)
+          )
+            throw new Error("ElevenLabs returned an invalid voice page token");
+
+          nextPageToken = response.next_page_token;
+          seenPageTokens.add(nextPageToken);
+        }
 
         return {
-          data: response.voices.map((voice) => ({
+          data: voices.map((voice) => ({
             value: voice.voice_id,
             label: voice.name,
           })),
