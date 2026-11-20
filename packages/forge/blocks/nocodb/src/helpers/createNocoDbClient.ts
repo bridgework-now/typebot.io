@@ -106,6 +106,8 @@ export const createNocoDbClient = ({
       const { limit: configuredLimit, ...filters } = searchParams;
       const limit = Number(configuredLimit ?? defaultLimitForSearch);
       const records: DataRecord[] = [];
+      const pageSize = Math.min(limit, 100);
+      let pageNumber = 1;
 
       while (records.length < limit) {
         const page = await safeKy
@@ -113,15 +115,17 @@ export const createNocoDbClient = ({
             headers,
             searchParams: {
               ...filters,
-              limit: limit - records.length,
-              offset: records.length,
+              pageSize,
+              page: pageNumber,
             },
           })
           .json<{ records: DataRecord[]; next?: string | null }>();
         records.push(...page.records.slice(0, limit - records.length));
         if (!page.next || page.records.length === 0) break;
+        // Keep the page size fixed so page boundaries remain consistent.
         // Rebuild pagination against the configured host instead of forwarding
         // credentials to a URL supplied in a response.
+        pageNumber += 1;
       }
 
       const { count } = await safeKy

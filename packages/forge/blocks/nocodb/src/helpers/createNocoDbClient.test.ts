@@ -92,12 +92,14 @@ describe("NocoDB v3 migration", () => {
       }
       if (url.pathname.endsWith("/records")) {
         expect(url.searchParams.get("viewId")).toBe("view-id");
-        const offset = Number(url.searchParams.get("offset"));
+        expect(url.searchParams.has("limit")).toBe(false);
+        expect(url.searchParams.has("offset")).toBe(false);
+        const pageNumber = Number(url.searchParams.get("page"));
         return Response.json({
           records:
-            offset === 0
+            pageNumber === 1
               ? [{ id: "a", fields: {} }, { id: "b", fields: {} }]
-              : [{ id: "c", fields: {} }],
+              : [{ id: "c", fields: {} }, { id: "d", fields: {} }],
           next: "https://example.invalid/untrusted-pagination",
         });
       }
@@ -125,8 +127,8 @@ describe("NocoDB v3 migration", () => {
     expect(
       requestedUrls
         .filter((url) => url.pathname.endsWith("/records"))
-        .map((url) => [url.searchParams.get("offset"), url.searchParams.get("limit")]),
-    ).toEqual([["0", "3"], ["2", "1"]]);
+        .map((url) => [url.searchParams.get("page"), url.searchParams.get("pageSize")]),
+    ).toEqual([["1", "3"], ["2", "3"]]);
   });
 
   it("wraps writes, strips replacement link writes, and batches updates", async () => {
