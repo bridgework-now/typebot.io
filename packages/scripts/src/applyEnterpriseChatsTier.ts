@@ -42,6 +42,7 @@ const applyEnterpriseChatsTier = async () => {
     throw new Error("Workspace not found or not linked to a Stripe customer");
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
 
@@ -131,11 +132,15 @@ const createEnterprisePrice = async (
     recurring: {
       interval: "month",
       usage_type: "metered",
+      // @ts-ignore stripe-version-2024-09-30.acacia
       aggregate_usage: "last_during_period",
     },
     tiers: [
       { up_to: tier.includedChats, flat_amount: tier.monthlyPriceInCents },
-      { up_to: "inf", unit_amount_decimal: tier.overageUnitAmountDecimal },
+      {
+        up_to: "inf",
+        unit_amount_decimal: Stripe.Decimal.from(tier.overageUnitAmountDecimal),
+      },
     ],
   });
 };

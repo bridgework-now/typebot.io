@@ -60,6 +60,7 @@ export const handleUpdateSubscription = async ({
     });
 
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
   const { data } = await stripe.subscriptions.list({
@@ -108,6 +109,7 @@ export const handleUpdateSubscription = async ({
         typebot: { workspaceId },
         hasStarted: true,
         createdAt: {
+          // @ts-ignore stripe-version-2024-09-30.acacia
           gte: new Date(subscription.current_period_start * 1000),
         },
       },

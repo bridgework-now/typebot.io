@@ -37,10 +37,11 @@ export const handleStripeWebhook = async ({
       message: "STRIPE_SECRET_KEY is missing",
     });
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
 
-  const event = stripe.webhooks.constructEvent(
+  const event = await stripe.webhooks.constructEventAsync(
     body,
     sig,
     env.STRIPE_WEBHOOK_SECRET,

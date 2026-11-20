@@ -47,6 +47,7 @@ export const handleGetSubscription = async ({
       subscription: null,
     };
   const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
   const subscriptions = await stripe.subscriptions.list({
@@ -67,7 +68,9 @@ export const handleGetSubscription = async ({
     subscription: {
       currentBillingPeriod: subscriptionSchema.shape.currentBillingPeriod.parse(
         {
+          // @ts-ignore stripe-version-2024-09-30.acacia
           start: new Date(currentSubscription.current_period_start),
+          // @ts-ignore stripe-version-2024-09-30.acacia
           end: new Date(currentSubscription.current_period_end),
         },
       ),
