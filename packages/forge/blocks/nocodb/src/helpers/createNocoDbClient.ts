@@ -1,4 +1,5 @@
 import { safeKy } from "@typebot.io/lib/ky";
+import { HTTPError } from "ky";
 import { defaultBaseUrl, defaultLimitForSearch } from "../constants";
 import type { ListTableRecordsResponse, TableMetaResponse } from "../types";
 
@@ -131,8 +132,14 @@ export const createNocoDbClient = ({
       const { count } = await safeKy
         .get(`${dataUrl}/count`, { headers, searchParams: filters })
         .json<{ count: number }>();
+      // Record access does not imply permission to read table schema.
+      // Preserve returned values when relation metadata is forbidden.
+      const relationFields = await getRelationFields().catch((error: unknown) => {
+        if (error instanceof HTTPError && error.response.status === 403) return [];
+        throw error;
+      });
       const relationNames = new Set(
-        (await getRelationFields()).map((field) => field.title),
+        relationFields.map((field) => field.title),
       );
       const list: ListTableRecordsResponse["list"] = [];
 

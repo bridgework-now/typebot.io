@@ -131,6 +131,95 @@ describe("NocoDB v3 migration", () => {
     ).toEqual([["1", "3"], ["2", "3"]]);
   });
 
+  it.each([
+    { schemaStatus: 200, viewId: undefined },
+    { schemaStatus: 403, viewId: undefined },
+    { schemaStatus: 200, viewId: "view-id" },
+    { schemaStatus: 403, viewId: "view-id" },
+  ])("lists records with schema status $schemaStatus and view $viewId", async ({ schemaStatus, viewId }) => {
+    const requestedUrls: URL[] = [];
+    const linkedRecord = {
+      id: "linked-id",
+      id_fields: { PrimaryKey: "linked-id" },
+      fields: { Name: "Bob" },
+    };
+    const record = {
+      id: "record-id",
+      id_fields: { PrimaryKey: "record-id" },
+      fields: {
+        Name: "Alice",
+        Hidden: "retained",
+        Related: [linkedRecord],
+        Json: linkedRecord,
+      },
+    };
+    replaceFetch(async (input, init) => {
+      const url = new URL(getRequestUrl(input));
+      requestedUrls.push(url);
+      expect(new Headers(init?.headers).get("xc-token")).toBe(params.apiKey);
+      expect(init?.method).toBe("GET");
+      if (url.pathname.includes("/meta/"))
+        return schemaStatus === 403
+          ? Response.json({ error: "FORBIDDEN" }, { status: 403 })
+          : Response.json({
+              fields: [{ id: "relation-id", title: "Related", type: "Links" }],
+            });
+      if (url.pathname.endsWith("/count"))
+        return Response.json({ count: 1 });
+      if (url.pathname.endsWith("/records"))
+        return Response.json({
+          records: viewId ? [{ id: record.id, fields: {} }] : [record],
+          next: null,
+        });
+      expect(url.pathname.endsWith("/records/record-id")).toBe(true);
+      expect(url.search).toBe("");
+      return Response.json(record);
+    });
+
+    const client = createNocoDbClient(params);
+    const response = await client.listRecords({
+      limit: "1",
+      ...(viewId ? { viewId } : {}),
+    });
+    expect(response.list).toEqual([{
+      Id: record.id,
+      PrimaryKey: "record-id",
+      ...record.fields,
+      Related: schemaStatus === 403
+        ? [linkedRecord]
+        : [{ Id: "linked-id", PrimaryKey: "linked-id", Name: "Bob" }],
+    }]);
+    expect(response.pageInfo.totalRows).toBe(1);
+    expect(requestedUrls.filter((url) => url.pathname.includes("/meta/"))).toHaveLength(1);
+    expect(requestedUrls.filter((url) => url.pathname.endsWith("/records/record-id"))).toHaveLength(viewId ? 1 : 0);
+
+    if (schemaStatus === 403) {
+      await expect(client.getTableMetadata()).rejects.toMatchObject({
+        response: { status: 403 },
+      });
+      await expect(client.createRecord({ Name: "Alice" })).rejects.toMatchObject({
+        response: { status: 403 },
+      });
+    }
+  });
+
+  it("propagates metadata failures other than forbidden access", async () => {
+    replaceFetch(async (input) => {
+      const url = new URL(getRequestUrl(input));
+      if (url.pathname.includes("/meta/"))
+        return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
+      if (url.pathname.endsWith("/count"))
+        return Response.json({ count: 1 });
+      return Response.json({
+        records: [{ id: 1, fields: { Name: "Alice" } }],
+        next: null,
+      });
+    });
+
+    await expect(createNocoDbClient(params).listRecords({ limit: "1" }))
+      .rejects.toMatchObject({ response: { status: 401 } });
+  });
+
   it("wraps writes, strips replacement link writes, and batches updates", async () => {
     const writes: { method: string; body: unknown }[] = [];
     replaceFetch(async (input, init) => {
