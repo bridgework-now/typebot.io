@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { createId } from "@paralleldrive/cuid2";
 import prisma from "@typebot.io/prisma";
 import { Stripe } from "stripe";
+import { createUsageRecord } from "./helpers/stripe/createUsageRecord";
 import { assertProductionEnvironment, confirmAction, runScript } from "./cli";
 
 const migrateSubscriptionsToUsageBased = async () => {
@@ -70,6 +71,7 @@ const migrateSubscriptionsToUsageBased = async () => {
     return;
 
   const stripe = new Stripe(secretKey, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
 
@@ -210,6 +212,7 @@ const migrateSubscriptionsToUsageBased = async () => {
         typebot: { workspaceId: workspace.id },
         hasStarted: true,
         createdAt: {
+          // @ts-ignore stripe-version-2024-09-30.acacia
           gte: new Date(newSubscription.current_period_start * 1000),
           lt: todayMidnight,
         },
@@ -267,7 +270,8 @@ const migrateSubscriptionsToUsageBased = async () => {
     const idempotencyKey = createId();
 
     console.log("Reporting total results:", totalResults);
-    await stripe.subscriptionItems.createUsageRecord(
+    await createUsageRecord(
+      stripe,
       subscriptionItem.id,
       {
         quantity: totalResults,

@@ -76,6 +76,7 @@ export const handleGetUsage = async ({
       hasStarted: true,
       createdAt: {
         gte: currentSubscription
+          // @ts-ignore stripe-version-2024-09-30.acacia
           ? new Date(currentSubscription.current_period_start * 1000)
           : firstDayOfMonth,
       },
@@ -85,6 +86,7 @@ export const handleGetUsage = async ({
   return {
     totalChatsUsed,
     resetsAt: currentSubscription
+      // @ts-ignore stripe-version-2024-09-30.acacia
       ? new Date(currentSubscription.current_period_end * 1000)
       : new Date(
           firstDayOfMonth.getFullYear(),
@@ -102,6 +104,7 @@ const getCurrentSubscription = async ({
   stripeSecretKey: string;
 }) => {
   const stripe = new Stripe(stripeSecretKey, {
+    // @ts-ignore stripe-version-2024-09-30.acacia
     apiVersion: "2024-09-30.acacia",
   });
 

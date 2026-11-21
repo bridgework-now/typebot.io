@@ -315,7 +315,7 @@
     "@typebot.io/lib": "workspace:*",
     "@typebot.io/prisma": "workspace:*",
     "posthog-node": "^5.8.2",
-    "stripe": "17.1.0",
+    "stripe": "23.2.0",
     "@typebot.io/workspaces": "workspace:*",
     "@typebot.io/typebot": "workspace:*",
     "@typebot.io/emails": "workspace:*",

@@ -166,7 +166,9 @@ export const proChatTiers = [
     up_to: "inf",
     unit_amount_decimal: "0.442",
   },
-] satisfies Stripe.PriceCreateParams.Tier[];
+] satisfies (Omit<Stripe.PriceCreateParams.Tier, "unit_amount_decimal"> & {
+  unit_amount_decimal?: string;
+})[];
 
 export const enterpriseChatTiers = [
   {
