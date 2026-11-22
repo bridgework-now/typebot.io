@@ -6,7 +6,7 @@ import {
   type ReadableSpan,
   SimpleSpanProcessor,
   type SpanProcessor,
-} from "@opentelemetry/sdk-trace-node";
+} from "@opentelemetry/sdk-trace";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 
 const expectedORPCErrorCodes = new Set([
@@ -36,7 +36,9 @@ const shouldIgnoreSpanError = (span: ReadableSpan) => {
   return exceptionEvents.every(isExpectedORPCExceptionEvent);
 };
 
-const baseSpanProcessor = new SimpleSpanProcessor(new OTLPTraceExporter());
+const baseSpanProcessor = new SimpleSpanProcessor({
+  exporter: new OTLPTraceExporter(),
+});
 
 const spanProcessor = {
   onStart: (span, context) => baseSpanProcessor.onStart(span, context),
